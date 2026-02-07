@@ -1,0 +1,55 @@
+{% for product in products %}
+<div class="group relative bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 hover:border-cyan-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-500/10 flex flex-col h-full">
+    
+    <div class="aspect-[4/3] overflow-hidden bg-slate-900 relative">
+        <img src="{{ product.image }}" alt="{{ product.name }}" class="w-full h-full object-cover transform group-hover:scale-110 transition duration-700">
+        
+        <div class="absolute top-3 right-3 bg-slate-900/90 backdrop-blur text-xs font-bold px-2 py-1 rounded text-cyan-400 border border-slate-700 pointer-events-none">
+            {{ product.category }}
+        </div>
+        
+        <form hx-post="{{ url_for('cart.add_to_cart', product_id=product._id) }}" 
+              hx-target="#cart-drawer-content" 
+              hx-swap="innerHTML"
+              @htmx:after-request="cartOpen = true"
+              class="absolute bottom-3 right-3 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 translate-y-2 group-hover:translate-y-0">
+            
+            <button type="submit" 
+                    {% if product.stock == 0 %}disabled{% endif %}
+                    class="bg-cyan-500 text-black p-2 rounded-lg shadow-lg hover:bg-cyan-400 transition hover:scale-110 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed cursor-pointer"
+                    title="Quick Add to Cart">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            </button>
+        </form>
+    </div>
+
+    <div class="p-5 flex flex-col flex-1">
+        <div class="flex justify-between items-start mb-2">
+            <h3 class="text-lg font-bold text-white group-hover:text-cyan-400 transition line-clamp-1">
+                <a href="{{ url_for('store.product_detail', product_id=product._id) }}">
+                    <span aria-hidden="true" class="absolute inset-0 z-10"></span>
+                    {{ product.name }}
+                </a>
+            </h3>
+            <span class="text-cyan-400 font-mono font-bold">${{ product.price }}</span>
+        </div>
+        
+        <p class="text-sm text-slate-400 line-clamp-2 mb-4 flex-1">{{ product.description }}</p>
+        
+        <div class="pt-4 border-t border-slate-700/50 flex items-center justify-between text-xs font-mono relative z-20">
+            {% if product.stock > 0 %}
+            <span class="text-green-400 flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+                In Stock ({{ product.stock }})
+            </span>
+            {% else %}
+            <span class="text-red-400">Out of Stock</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="col-span-full py-12 text-center text-slate-500">
+    No products found matching your criteria.
+</div>
+{% endfor %}

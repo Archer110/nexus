@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS | Future Hardware</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Space Grotesk', sans-serif; }
+        [x-cloak] { display: none !important; }
+        /* Custom Scrollbar for Drawer */
+        .drawer-scroll::-webkit-scrollbar { width: 6px; }
+        .drawer-scroll::-webkit-scrollbar-track { background: #0f172a; }
+        .drawer-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    </style>
+</head>
+
+<body class="bg-slate-900 text-slate-300 antialiased min-h-screen flex flex-col"
+      x-data="{ cartOpen: false }"
+      @keydown.escape="cartOpen = false">
+
+    <div class="relative z-50" aria-labelledby="slide-over-title" role="dialog" aria-modal="true" x-show="cartOpen" x-cloak>
+        <div class="fixed inset-0 bg-slate-950/75 transition-opacity" 
+             x-show="cartOpen"
+             x-transition.opacity.duration.500ms
+             @click="cartOpen = false"></div>
+
+        <div class="fixed inset-0 overflow-hidden">
+            <div class="absolute inset-0 overflow-hidden">
+                <div class="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10">
+                    
+                    <div class="pointer-events-auto w-screen max-w-md"
+                         x-show="cartOpen"
+                         x-transition:enter="transform transition ease-in-out duration-500"
+                         x-transition:enter-start="translate-x-full"
+                         x-transition:enter-end="translate-x-0"
+                         x-transition:leave="transform transition ease-in-out duration-500"
+                         x-transition:leave-start="translate-x-0"
+                         x-transition:leave-end="translate-x-full">
+                         
+                        <div id="cart-drawer-content" class="h-full bg-slate-900 shadow-xl border-l border-slate-700">
+                            {% with cart = session.get('cart', []) %}
+                                {% include 'partials/cart_drawer.html' %}
+                            {% endwith %}
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <nav class="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-700/50">
+        <div class="max-w-[1600px] mx-auto px-4 md:px-8">
+            <div class="flex items-center justify-between h-20 gap-4">
+                
+                <a href="{{ url_for('store.index') }}" class="flex items-center gap-2 group">
+                    <div class="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center text-black font-bold text-xl">N</div>
+                    <span class="font-bold text-2xl text-white">NEXUS</span>
+                </a>
+
+                <div class="hidden md:block flex-1 max-w-2xl mx-8">
+                    <input type="text" name="q"
+                           hx-get="{{ url_for('store.index') }}" 
+                           hx-trigger="keyup changed delay:500ms" 
+                           hx-target="#store-product-grid" 
+                           placeholder="Search catalog..." 
+                           class="w-full bg-slate-800/80 border border-slate-700 rounded-full py-2 px-6 text-sm focus:outline-none focus:border-cyan-400 text-white">
+                </div>
+
+                <div class="flex items-center gap-6">
+                    
+                    <button @click="cartOpen = true" class="relative group p-2 rounded-xl hover:bg-slate-800 transition">
+                        <svg class="w-6 h-6 text-slate-400 group-hover:text-cyan-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+                        
+                        <div id="cart-badge-container"
+                            {% set count = session.get('cart', []) | selectattr('qty', 'defined') | map(attribute='qty') | sum %}
+                            {% if count > 0 %}
+                            <span id="cart-badge" class="absolute -top-1 -right-1 bg-cyan-500 text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-lg animate-pulse">
+                                {{ count }}
+                            </span>
+                            {% endif %}
+                        </div>
+
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow w-full px-4 md:px-8 py-8">
+        <div class="max-w-[1600px] mx-auto">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="mb-6 p-4 rounded-xl border bg-slate-800 border-slate-700 text-slate-300">
+                        {{ message }}
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+</body>
+</html>

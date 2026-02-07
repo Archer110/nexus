@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-6 py-12">
+    
+    <h1 class="text-3xl font-bold mb-8 text-white font-heading">Checkout</h1>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-12">
+        
+        <div class="lg:col-span-7">
+            {% if errors %}
+            <div class="mb-8 bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+                <h3 class="text-red-500 font-bold mb-2">Inventory Issues</h3>
+                <ul class="list-disc list-inside text-red-400 text-sm">
+                    {% for error in errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+                <p class="text-gray-500 text-xs mt-2">Please adjust your cart quantity.</p>
+            </div>
+            {% endif %}
+
+            <form action="{{ url_for('cart.checkout') }}" method="POST" class="space-y-6">
+                
+                <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Contact Info</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-slate-400 mb-1">Email Address</label>
+                            <input type="email" name="email" required placeholder="you@example.com" 
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-cyan-500 focus:outline-none transition text-white">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Shipping Details</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="md:col-span-2">
+                            <label class="block text-sm text-slate-400 mb-1">Full Name</label>
+                            <input type="text" name="name" required 
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-cyan-500 focus:outline-none transition text-white">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-sm text-slate-400 mb-1">Address</label>
+                            <input type="text" name="address" required 
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-cyan-500 focus:outline-none transition text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-slate-400 mb-1">City</label>
+                            <input type="text" name="city" required 
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-cyan-500 focus:outline-none transition text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-slate-400 mb-1">ZIP / Postal Code</label>
+                            <input type="text" name="zip" required 
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-cyan-500 focus:outline-none transition text-white">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Payment</h2>
+                    <div class="p-4 border border-cyan-500/30 bg-cyan-500/10 rounded-lg text-sm text-cyan-400 flex gap-3 items-center">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <p>This is a demo. No real payment processing will occur.</p>
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-xl text-lg transition shadow-lg shadow-green-500/20">
+                    Pay ${{ total }}
+                </button>
+
+            </form>
+        </div>
+
+        <div class="lg:col-span-5">
+            <div class="sticky top-32 bg-slate-800 rounded-2xl p-6 border border-slate-700">
+                <h3 class="text-lg font-bold mb-6 text-white">Order Summary</h3>
+                
+                <div class="space-y-4 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+                    {% for item in items %}
+                    <div class="flex gap-4 p-3 rounded-lg bg-slate-700/30 border border-slate-700 hover:border-cyan-500/30 transition group items-center">
+                        
+                        <div class="w-16 h-16 rounded-md bg-black overflow-hidden flex-shrink-0 border border-slate-600">
+                            <img src="{{ item.image }}" class="w-full h-full object-cover">
+                        </div>
+                        
+                        <div class="flex-1 flex flex-col justify-between h-full py-0.5">
+                            <div class="flex justify-between items-start">
+                                <h4 class="font-medium text-sm text-white line-clamp-1 pr-2">{{ item.name }}</h4>
+                                <span class="text-sm font-bold text-cyan-400 font-mono">${{ item.subtotal }}</span>
+                            </div>
+
+                            <div class="flex items-center justify-between mt-2">
+                                <div class="flex items-center bg-slate-900 rounded border border-slate-600">
+                                    <form action="{{ url_for('cart.update_quantity', product_id=item.product_id, action='decrease') }}" method="POST" class="flex">
+                                        <button type="submit" 
+                                                class="px-2.5 py-0.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-l transition disabled:opacity-30 disabled:hover:bg-transparent"
+                                                {% if item.qty == 1 %}disabled{% endif %}>
+                                            -
+                                        </button>
+                                    </form>
+                                    
+                                    <span class="text-xs text-white font-mono w-6 text-center border-x border-slate-700">{{ item.qty }}</span>
+                                    
+                                    <form action="{{ url_for('cart.update_quantity', product_id=item.product_id, action='increase') }}" method="POST" class="flex">
+                                        <button type="submit" 
+                                                class="px-2.5 py-0.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-r transition">
+                                            +
+                                        </button>
+                                    </form>
+                                </div>
+
+                                <a href="{{ url_for('cart.remove_from_cart', product_id=item.product_id) }}"
+                                class="text-slate-500 hover:text-red-400 transition p-1 rounded-md hover:bg-red-400/10" 
+                                title="Remove Item">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="border-t border-slate-700 mt-6 pt-6 space-y-2">
+                    <div class="flex justify-between text-slate-400">
+                        <span>Subtotal</span>
+                        <span>${{ total }}</span>
+                    </div>
+                    <div class="flex justify-between text-slate-400">
+                        <span>Shipping</span>
+                        <span>Free</span>
+                    </div>
+                    <div class="flex justify-between text-xl font-bold text-white mt-4 pt-4 border-t border-slate-700">
+                        <span>Total</span>
+                        <span class="font-mono text-cyan-400">${{ total }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

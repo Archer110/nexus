@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700&family=Inter:wght@400;600&display=swap');
+
+:root {
+    --bg-deep: #0f172a;      /* Slate 900 */
+    --bg-card: #1e293b;      /* Slate 800 */
+    --accent-cyan: #22d3ee;  /* Cyan 400 */
+    --accent-pink: #f472b6;  /* Pink 400 */
+}
+
+body {
+    background-color: var(--bg-deep);
+    color: #e2e8f0;
+    font-family: 'Inter', sans-serif;
+}
+
+/* Typography */
+h1, h2, h3, .font-heading { font-family: 'Space Grotesk', sans-serif; }
+
+/* Utilities */
+.glass {
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.text-gradient {
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Hover Effects */
+.card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+.card-hover:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 40px -10px rgba(34, 211, 238, 0.15);
+    border-color: rgba(34, 211, 238, 0.3);
+}
+
+/* Animations */
+[x-cloak] { display: none !important; }

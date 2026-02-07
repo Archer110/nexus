@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto text-center py-20">
+    
+    <div class="w-24 h-24 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-8 animate-bounce">
+        <svg class="w-12 h-12 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+    </div>
+
+    <h1 class="text-4xl md:text-5xl font-bold font-heading text-white mb-6">Order Confirmed!</h1>
+    
+    <p class="text-slate-400 text-lg mb-8">
+        Thank you for your purchase. We've received your order and are preparing it for shipment.
+    </p>
+
+    <div class="bg-slate-800 rounded-2xl border border-slate-700 p-8 text-left max-w-md mx-auto mb-10 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-20 h-20 bg-cyan-500/10 rounded-bl-full"></div>
+
+        <div class="mb-6">
+            <p class="text-slate-500 text-xs uppercase tracking-wider font-bold mb-1">Order ID</p>
+            <p class="text-cyan-400 font-mono text-lg">#{{ order.id }}</p>
+        </div>
+        
+        <div class="mb-6">
+            <p class="text-slate-500 text-xs uppercase tracking-wider font-bold mb-1">Total Amount</p>
+            <p class="text-white text-2xl font-bold">${{ order.total_amount }}</p>
+        </div>
+
+        <div>
+            <p class="text-slate-500 text-xs uppercase tracking-wider font-bold mb-1">Shipping To</p>
+            <p class="text-white">{{ order.customer_name }}</p>
+            <p class="text-slate-400 text-sm mt-1">{{ order.customer_email }}</p>
+        </div>
+    </div>
+
+    <div class="flex justify-center gap-4">
+        <a href="{{ url_for('store.index') }}" class="bg-white text-black px-8 py-3 rounded-full font-bold hover:bg-cyan-400 transition transform hover:scale-105 shadow-lg shadow-cyan-500/20">
+            Continue Shopping
+        </a>
+    </div>
+
+</div>
+{% endblock %}
