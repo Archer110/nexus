@@ -1,5 +1,22 @@
-.venv/
-.env
-.vscode/
+# Python
 __pycache__/
-MakeFile
+*.py[cod]
+*.pyo
+
+# Virtual env
+.venv/
+
+# Environment variables
+.env
+
+# IDEs
+.vscode/
+
+# Flask
+instance/
+
+# Migrations cache
+migrations/__pycache__/
+
+# Tools
+.ruff_cache/
