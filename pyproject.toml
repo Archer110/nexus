@@ -1,5 +1,5 @@
 [project]
-name = "istore"
+name = "nexus"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -11,7 +11,6 @@ dependencies = [
     "psycopg2-binary>=2.9.11",
     "python-dotenv>=1.2.1",
     "requests>=2.32.5",
-    "ruff>=0.15.0",
 ]
 
 # pyproject.toml
@@ -38,3 +37,9 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.15.0",
+]

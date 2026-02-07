@@ -24,7 +24,7 @@ setup:
 	@echo "${GREEN}Creating virtual environment with uv...${NC}"
 	$(UV) venv
 	@echo "${GREEN}Installing dependencies with uv...${NC}"
-	$(UV) pip install -r requirements.txt
+	$(UV) sync
 	@echo "${GREEN}Creating .env file...${NC}"
 	@if [ ! -f .env ]; then cp .env.example .env 2>/dev/null || touch .env; fi
 
