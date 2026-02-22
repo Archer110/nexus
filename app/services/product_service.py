@@ -2,7 +2,9 @@ from datetime import datetime
 
 from bson import ObjectId
 from flask import current_app
+
 from sqlalchemy.exc import SQLAlchemyError
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from app.extensions import mongo, sql_db
 from app.models import Inventory
@@ -17,19 +19,19 @@ class ProductService:
     # --- WRITES (The "Dual-Write" Logic) ---
 
     @staticmethod
-    def create_product(data: dict, stock: int) -> dict:
+    def create_product(data: Dict[str, Any], stock: int) -> Dict[str, Any]:
         """
         Creates a product in the Catalog (Mongo) and initializes Inventory (SQL).
         """
         # 1. Prepare Mongo Document (Flexible Schema)
-        product_doc = {
+        product_doc: Dict[str, Any] = {
             "name": data.get("name"),
             "price": float(data.get("price", 0)),
             "category": data.get("category"),
             "image": data.get("image") or "https://placehold.co/600x400",
             "description": data.get("description", "Added via Admin"),
             "specs": data.get("specs", {}),  # <--- The 'Messy' Data
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now()
         }
 
         # 2. Insert into Mongo (Primary)
@@ -42,7 +44,7 @@ class ProductService:
             new_inventory = Inventory(
                 product_id=new_id, 
                 stock=int(stock), 
-                last_updated=datetime.utcnow()
+                last_updated=datetime.now()
             )
             sql_db.session.add(new_inventory)
             sql_db.session.commit()
@@ -56,7 +58,7 @@ class ProductService:
         return {**product_doc, "_id": new_id, "stock": stock}
 
     @staticmethod
-    def update_product(product_id: str, field: str, value):
+    def update_product(product_id: str, field: str, value: Union[str, int, float]) -> Union[str, int, float]:
         """
         Updates data in the correct database based on the field.
         - 'stock' -> Updates SQL
@@ -90,7 +92,7 @@ class ProductService:
             return value
 
     @staticmethod
-    def delete_product(product_id: str):
+    def delete_product(product_id: str) -> bool:
         """
         Removes the product from BOTH worlds.
         """
@@ -105,7 +107,13 @@ class ProductService:
     # --- READS (The "Hybrid Join" Logic) ---
 
     @staticmethod
-    def get_catalog(page=1, per_page=9, search_query=None, category=None, spec_filters=None):
+    def get_catalog(
+            page: int = 1,
+            per_page: Optional[int] = 9,
+            search_query: Optional[str] = None,
+            category: Optional[str] = None,
+            spec_filters: Optional[Dict[str, List[str]]] = None
+        ) -> Tuple[List[Dict[str, Any]], int]:
         """
         The Master Query.
         1. Filters documents in Mongo.
@@ -116,7 +124,7 @@ class ProductService:
             per_page = current_app.config.get("PRODUCTS_PER_PAGE", 9)
 
         # 1. Build MongoDB Query
-        mongo_filter = {}
+        mongo_filter: Dict[str, Any] = {}
         if search_query:
             mongo_filter["name"] = {"$regex": search_query, "$options": "i"}
         if category:
@@ -130,11 +138,11 @@ class ProductService:
                     mongo_filter[f"specs.{key}"] = {"$in": values}
 
         # 2. Fetch from Mongo (Pagination)
-        total_count = mongo.db.products.count_documents(mongo_filter)
-        skip = (page - 1) * per_page
+        total_count: int = mongo.db.products.count_documents(mongo_filter)
+        skip: int = (page - 1) * per_page
         
-        cursor = mongo.db.products.find(mongo_filter).sort("created_at", -1)
-        products = list(cursor.skip(skip).limit(per_page))
+        cursor: Any = mongo.db.products.find(mongo_filter).sort("created_at", -1)
+        products: List[Dict[str, Any]] = list(cursor.skip(skip).limit(per_page))
 
         # 3. The "Application-Side Join"
         if products:
@@ -153,7 +161,11 @@ class ProductService:
         return products, total_count
 
     @staticmethod
-    def get_admin_catalog(page=1, per_page=10, search_query=""):
+    def get_admin_catalog(
+            page: int = 1,
+            per_page: Optional[int] = 9,
+            search_query: Optional[str] = ""
+        ) -> Tuple[List[Dict[str, Any]], int]:
         """
         Dedicated Admin Query. 
         Broader search (Name OR Desc OR Category) + Automatic Stock Attach.
@@ -186,7 +198,7 @@ class ProductService:
         return products, total_count
 
     @staticmethod
-    def get_product_details(product_id: str):
+    def get_product_details(product_id: str) -> Optional[Dict[str, Any]]:
         """
         Fetches a single product by ID, merging data from both DBs.
         """
@@ -211,7 +223,7 @@ class ProductService:
         return product
 
     @staticmethod
-    def get_facets(category=None):
+    def get_facets(category=None) -> Tuple[List[str], Dict[str, List[str]]]:
         """
         Returns available categories and dynamic spec filters for the sidebar.
         This uses Mongo Aggregation pipelines.
@@ -239,11 +251,11 @@ class ProductService:
     # --- ATOMIC STATS (For Dashboard) ---
     
     @staticmethod
-    def count_products():
+    def count_products() -> int:
         return mongo.db.products.count_documents({})
 
     @staticmethod
-    def get_category_breakdown():
+    def get_category_breakdown() -> List[Dict[str, Any]]:
         pipeline = [
             {"$group": {"_id": "$category", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},

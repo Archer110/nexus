@@ -2,6 +2,7 @@ from datetime import datetime
 
 from bson import ObjectId
 from sqlalchemy import or_
+from typing import Dict, List, Optional, Any
 
 from app.extensions import mongo, sql_db
 from app.models import Inventory, Order, OrderItem
@@ -16,7 +17,10 @@ class OrderService:
     # --- WRITES (The "Safe" Transaction) ---
 
     @staticmethod
-    def create_order(customer_data: dict, cart_items: list):
+    def create_order(
+        customer_data: Dict[str, Any],
+        cart_items: List[Dict[str, Any]]
+    ) -> Optional[Order]:
         """
         Executes the Checkout Transaction.
         1. Validates Stock (SQL Inventory).
@@ -31,14 +35,14 @@ class OrderService:
         # Note: In Flask-SQLAlchemy, transactions are implicit on commit, 
         # but we use try/except to handle rollbacks explicitly.
         try:
-            total_amount = 0.0
-            new_items = []
+            total_amount: float = 0.0
+            new_items: List[OrderItem] = []
 
             # 1. Process Items & Deduct Stock
             for item in cart_items:
-                product_id = item["product_id"]
                 qty = int(item["qty"])
                 price = float(item["price"])
+                product_id = str(item["product_id"])
 
                 # STRICT Check: Lock the inventory row for update
                 # (with_for_update ensures no one else buys this last item while we are processing)
@@ -85,7 +89,7 @@ class OrderService:
             raise e
 
     @staticmethod
-    def update_status(order_id, new_status):
+    def update_status(order_id: int, new_status: str) -> Optional[Order]:
         order = Order.query.get(order_id)
         if order:
             order.status = new_status
@@ -95,7 +99,7 @@ class OrderService:
     # --- READS (The "Reverse" Hybrid Join) ---
 
     @staticmethod
-    def get_order_with_details(order_id):
+    def get_order_with_details(order_id: int) -> Optional[Dict[str, Any]]:
         """
         Fetches the Order (SQL) and enriches items with Product Data (Mongo).
         Used for the 'Order Success' or 'Order History' page.
@@ -106,16 +110,16 @@ class OrderService:
 
         # 1. Extract IDs from the SQL Line Items
         # We need to know WHICH documents to fetch from Mongo
-        product_ids_str = [item.product_id_str for item in order.items]
+        product_ids_str: List[str] = [item.product_id_str for item in order.items]
         
         # 2. Batch Fetch from Mongo (1 Query)
         # Convert strings to ObjectIds for the Mongo query
-        oids = [ObjectId(pid) for pid in product_ids_str if ObjectId.is_valid(pid)]
-        mongo_docs = list(mongo.db.products.find({"_id": {"$in": oids}}))
+        oids: List[ObjectId] = [ObjectId(pid) for pid in product_ids_str if ObjectId.is_valid(pid)]
+        mongo_docs: List[Dict[str, Any]] = list(mongo.db.products.find({"_id": {"$in": oids}}))
         
         # 3. Create a Lookup Map for speed
         # { "65c...": { "name": "Laptop", "image": "..." } }
-        product_map = {str(doc["_id"]): doc for doc in mongo_docs}
+        product_map: Dict[str, Dict[str, Any]] = {str(doc["_id"]): doc for doc in mongo_docs}
 
         # 4. Construct the View Model
         # We don't modify the SQL model directly; we create a dictionary for the template.
@@ -136,7 +140,7 @@ class OrderService:
         return order_dict
 
     @staticmethod
-    def get_orders(search_query=None):
+    def get_orders(search_query: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Standard Admin List Query.
         """
@@ -158,15 +162,15 @@ class OrderService:
     # --- ATOMIC STATS (For Dashboard) ---
 
     @staticmethod
-    def get_total_revenue():
+    def get_total_revenue() -> float:
         """Returns the sum of all confirmed orders."""
         return sql_db.session.query(sql_db.func.sum(Order.total_amount)).scalar() or 0.0
 
     @staticmethod
-    def get_recent_orders(limit=5):
+    def get_recent_orders(limit: Optional[int] = 5) -> List[Order]:
         """Returns the N most recent orders."""
         return Order.query.order_by(Order.created_at.desc()).limit(limit).all()
 
     @staticmethod
-    def count_orders():
+    def count_orders() -> int:
         return Order.query.count()
