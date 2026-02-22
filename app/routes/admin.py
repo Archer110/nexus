@@ -11,39 +11,23 @@ from flask import (
     url_for,
 )
 
-from app.extensions import mongo, sql_db
-from app.models import Inventory, OrderSQL
+# THE CRITICAL CHANGE: 
+# We import Services, NOT Models or Database extensions.
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
-
-def attach_stock(products_list):
-    if not products_list:
-        return products_list
-    product_ids = [str(p["_id"]) for p in products_list]
-    inventory_records = Inventory.query.filter(
-        Inventory.product_id.in_(product_ids)
-    ).all()
-    stock_map = {inv.product_id: inv.stock for inv in inventory_records}
-    for p in products_list:
-        p["stock"] = stock_map.get(str(p["_id"]), 0)
-    return products_list
-
-
-# 1. Auth Decorator
+# --- AUTH DECORATOR ---
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get("admin_logged_in"):
-            return redirect(url_for("admin.admin_login"))  # Note: admin.admin_login
+            return redirect(url_for("admin.admin_login"))
         return f(*args, **kwargs)
-
     return decorated
 
-
-# 2. Login Routes
+# --- LOGIN/LOGOUT ---
 @admin_bp.route("/login", methods=["GET", "POST"])
 def admin_login():
     error = None
@@ -57,33 +41,28 @@ def admin_login():
             error = "Invalid credentials"
     return render_template("admin/login.html", error=error)
 
-
 @admin_bp.route("/logout")
 def admin_logout():
     session.pop("admin_logged_in", None)
     return redirect(url_for("admin.admin_login"))
 
 
-# 3. Dashboard
+# --- DASHBOARD (The "Orchestrator") ---
 @admin_bp.route("/")
 @admin_required
 def dashboard():
-    # 1. Revenue & Order Counts (SQL)
-    revenue = (
-        sql_db.session.query(sql_db.func.sum(OrderSQL.total_amount)).scalar() or 0.0
-    )
-    orders_count = OrderSQL.query.count()
-    recent_orders = OrderSQL.query.order_by(OrderSQL.created_at.desc()).limit(10).all()
+    """
+    Orchestrates data from multiple services to build the dashboard view.
+    It doesn't know where the data comes from (SQL or Mongo).
+    """
+    # 1. Ask OrderService for Financials
+    revenue = OrderService.get_total_revenue()
+    orders_count = OrderService.count_orders()
+    recent_orders = OrderService.get_recent_orders(limit=10)
 
-    # 2. Product Count (Mongo)
-    products_count = mongo.db.products.count_documents({})
-
-    # 3. Category Distribution (Mongo Aggregation)
-    pipeline = [
-        {"$group": {"_id": "$category", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-    ]
-    cat_stats = list(mongo.db.products.aggregate(pipeline))
+    # 2. Ask ProductService for Catalog Stats
+    products_count = ProductService.count_products()
+    cat_stats = ProductService.get_category_breakdown()
 
     return render_template(
         "admin/dashboard.html",
@@ -95,46 +74,25 @@ def dashboard():
     )
 
 
+# --- PRODUCT MANAGEMENT ---
 @admin_bp.route("/products")
 @admin_required
 def admin_products():
     page = int(request.args.get("page", 1))
-    per_page = current_app.config["ADMIN_PER_PAGE"]
-    skip = (page - 1) * per_page
+    per_page = current_app.config.get("ADMIN_PER_PAGE", 10)
     search_query = request.args.get("q", "")
 
-    # 1. Build Query (Mongo)
-    query_filter = {}
-    if search_query:
-        query_filter["$or"] = [
-            {"name": {"$regex": search_query, "$options": "i"}},
-            {"description": {"$regex": search_query, "$options": "i"}},
-            {"category": {"$regex": search_query, "$options": "i"}},
-        ]
+    # Call the specialized Admin Catalog method
+    products, total_products = ProductService.get_admin_catalog(
+        page=page, 
+        per_page=per_page, 
+        search_query=search_query
+    )
 
-    # 2. Fetch & Count
-    cursor = mongo.db.products.find(query_filter).sort("created_at", -1)
-    total_products = mongo.db.products.count_documents(query_filter)
-    products = list(cursor.skip(skip).limit(per_page))
-
-    # 3. Attach Stock & Fix ObjectId
-    if products:
-        p_ids = [str(p["_id"]) for p in products]
-        inventory_map = {
-            inv.product_id: inv.stock
-            for inv in Inventory.query.filter(Inventory.product_id.in_(p_ids)).all()
-        }
-
-        for p in products:
-            # CRITICAL FIX: Convert ObjectId to string for JSON serialization
-            p["_id"] = str(p["_id"])
-            p["stock"] = inventory_map.get(p["_id"], 0)
-
-    # --- HTMX RESPONSE ---
+    # HTMX Support for search/pagination
     if request.headers.get("HX-Request"):
         return render_template("admin/partials/products_list.html", products=products)
 
-    # Full Page Load
     return render_template(
         "admin/products.html",
         products=products,
@@ -144,11 +102,10 @@ def admin_products():
         q=search_query,
     )
 
-
 @admin_bp.route("/products/add", methods=["POST"])
 @admin_required
 def admin_add_product():
-    # 1. Parse Data
+    # 1. Parse JSON Specs (if any)
     try:
         specs = json.loads(request.form.get("specs_json", "{}"))
     except:
@@ -159,61 +116,57 @@ def admin_add_product():
         "price": request.form.get("price"),
         "category": request.form.get("category"),
         "image": request.form.get("image"),
+        "description": request.form.get("description"),
         "specs": specs,
     }
     stock = request.form.get("stock", 0)
 
-    # 2. Call Service (The complex logic is hidden!)
+    # 2. Delegate to Service
     new_product = ProductService.create_product(data, stock)
 
-    # 3. Render
+    # 3. Render Row (HTMX)
     return render_template("admin/partials/product_row.html", product=new_product)
-
 
 @admin_bp.route("/products/update/<product_id>", methods=["POST"])
 @admin_required
 def admin_update_product(product_id):
+    """
+    Handles inline edits from the table (Stock, Price, etc).
+    """
     field = request.args.get("field")
     value = request.form.get("value") or request.form.get(field)
 
-    # Call Service
+    # The Service handles the logic of "Which DB do I update?"
     new_val = ProductService.update_product(product_id, field, value)
 
     if field == "price":
         return f"${new_val}"
     return f"{new_val}"
 
-
 @admin_bp.route("/products/delete/<product_id>", methods=["DELETE"])
 @admin_required
 def admin_delete_product(product_id):
     ProductService.delete_product(product_id)
-    return ""
+    return ""  # HTTP 200 OK
 
 
+# --- ORDER MANAGEMENT ---
 @admin_bp.route("/orders")
 @admin_required
 def admin_orders():
     search_query = request.args.get("q", "")
 
-    # Call Service
     orders = OrderService.get_orders(search_query)
 
     return render_template("admin/orders.html", orders=orders, q=search_query)
-
 
 @admin_bp.route("/orders/update/<int:order_id>", methods=["POST"])
 @admin_required
 def update_order_status(order_id):
     new_status = request.form.get("status")
+    
+    order = OrderService.update_status(order_id, new_status)
 
-    # Call Service
-    OrderService.update_status(order_id, new_status)
-
-    # ... (Return HTMX Select as before) ...
-    # (You can likely keep the existing return logic for the UI here)
-    return """
-    <select name="status" ... >
-       ... (Keep the select HTML you had) ...
-    </select>
-    """
+    # Return the updated select dropdown (HTMX pattern)
+    # (Simplified for brevity, assumes you have a macro or snippet for this)
+    return render_template("admin/partials/order_status_select.html", order=order)
