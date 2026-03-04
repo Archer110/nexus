@@ -1,6 +1,8 @@
-from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
+
+from sqlalchemy.orm import Mapped
+from typing import Any, Dict, List
 
 from app.extensions import sql_db
 
@@ -94,7 +96,7 @@ class Order(sql_db.Model):
 
     # Relationship: One Order has Many Items
     # cascade="all, delete-orphan" means if we delete the Order, the Items die too.
-    items: List[OrderItem] = sql_db.relationship("OrderItem", backref="order", cascade="all, delete-orphan")
+    items: Mapped[List["OrderItem"]] = sql_db.relationship("OrderItem", backref="order", cascade="all, delete-orphan")
 
     def to_dict(self) -> Dict[str, Any]:
         return {
