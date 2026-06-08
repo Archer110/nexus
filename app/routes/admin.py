@@ -18,6 +18,13 @@ from app.services.product_service import ProductService
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
+
+def _admin_products_url_with_page(page):
+    args = request.args.to_dict(flat=False)
+    args["page"] = [page]
+    return url_for("admin.admin_products", **args)
+
+
 # --- AUTH DECORATOR ---
 def admin_required(f):
     @wraps(f)
@@ -78,7 +85,7 @@ def dashboard():
 @admin_bp.route("/products")
 @admin_required
 def admin_products():
-    page = int(request.args.get("page", 1))
+    page = max(int(request.args.get("page", 1)), 1)
     per_page = current_app.config.get("ADMIN_PER_PAGE", 10)
     search_query = request.args.get("q", "")
 
@@ -89,18 +96,23 @@ def admin_products():
         search_query=search_query
     )
 
+    template_ctx = {
+        "products": products,
+        "page": page,
+        "total": total_products,
+        "per_page": per_page,
+        "has_next": page * per_page < total_products,
+        "next_page_url": _admin_products_url_with_page(page + 1),
+        "q": search_query,
+    }
+
     # HTMX Support for search/pagination
     if request.headers.get("HX-Request"):
-        return render_template("admin/partials/products_list.html", products=products)
+        if request.headers.get("HX-Target") == "admin-products-load-more":
+            return render_template("admin/partials/products_list.html", **template_ctx)
+        return render_template("admin/partials/products_panel.html", **template_ctx, oob=True)
 
-    return render_template(
-        "admin/products.html",
-        products=products,
-        page=page,
-        total=total_products,
-        per_page=per_page,
-        q=search_query,
-    )
+    return render_template("admin/products.html", **template_ctx)
 
 @admin_bp.route("/products/add", methods=["POST"])
 @admin_required
@@ -108,7 +120,7 @@ def admin_add_product():
     # 1. Parse JSON Specs (if any)
     try:
         specs = json.loads(request.form.get("specs_json", "{}"))
-    except:
+    except (TypeError, json.JSONDecodeError):
         specs = {}
 
     data = {
@@ -157,6 +169,14 @@ def admin_orders():
     search_query = request.args.get("q", "")
 
     orders = OrderService.get_orders(search_query)
+
+    if request.headers.get("HX-Request"):
+        return render_template(
+            "admin/partials/orders_panel.html",
+            orders=orders,
+            q=search_query,
+            oob=True,
+        )
 
     return render_template("admin/orders.html", orders=orders, q=search_query)
 

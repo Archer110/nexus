@@ -1,8 +1,15 @@
-from flask import Blueprint, abort, render_template, request
+from flask import Blueprint, abort, current_app, render_template, request, url_for
 
 from app.services.product_service import ProductService
 
 store_bp = Blueprint("store", __name__)
+
+
+def _store_url_with_page(page):
+    args = request.args.to_dict(flat=False)
+    args["page"] = [page]
+    return url_for("store.index", **args)
+
 
 @store_bp.route("/")
 def index():
@@ -14,9 +21,10 @@ def index():
     - Handles HTMX partial rendering for the 'Modern Monolith' feel.
     """
     # 1. Parse Standard Query Params
-    page = int(request.args.get("page", 1))
+    page = max(int(request.args.get("page", 1)), 1)
     query = request.args.get("q", "")
     category = request.args.get("cat", "")
+    per_page = current_app.config.get("PRODUCTS_PER_PAGE", 9)
 
     # 2. Extract Dynamic Spec Filters (The "NoSQL" Magic)
     # Any query param that isn't 'page', 'q', or 'cat' is treated as a product spec.
@@ -32,7 +40,7 @@ def index():
     # The route doesn't know this data comes from Mongo + SQL. It just gets a list.
     products, total_count = ProductService.get_catalog(
         page=page,
-        per_page=None, # Use default from config
+        per_page=per_page,
         search_query=query,
         category=category,
         spec_filters=spec_filters,
@@ -49,6 +57,9 @@ def index():
         "all_categories": all_categories,
         "active_facets": active_facets,
         "page": page,
+        "per_page": per_page,
+        "has_next": page * per_page < total_count,
+        "next_page_url": _store_url_with_page(page + 1),
         "cat": category,
         "q": query,
         "spec_filters": spec_filters
@@ -59,7 +70,7 @@ def index():
     # we only render the product grid, not the whole page.
     if request.headers.get("HX-Request"):
         target = request.headers.get("HX-Target")
-        if target == "main-layout":
+        if target in {"app-content", "main-layout"}:
             return render_template("partials/main_layout.html", **template_ctx)
         return render_template("partials/product_list.html", **template_ctx)
 

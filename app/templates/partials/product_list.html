@@ -26,7 +26,12 @@
     <div class="p-5 flex flex-col flex-1">
         <div class="flex justify-between items-start mb-2">
             <h3 class="text-lg font-bold text-white group-hover:text-cyan-400 transition line-clamp-1">
-                <a href="{{ url_for('store.product_detail', product_id=product._id) }}">
+                <a href="{{ url_for('store.product_detail', product_id=product._id) }}"
+                   hx-get="{{ url_for('store.product_detail', product_id=product._id) }}"
+                   hx-target="#app-content"
+                   hx-select="#app-content"
+                   hx-swap="outerHTML"
+                   hx-push-url="true">
                     <span aria-hidden="true" class="absolute inset-0 z-10"></span>
                     {{ product.name }}
                 </a>
@@ -53,3 +58,21 @@
     No products found matching your criteria.
 </div>
 {% endfor %}
+
+{% if has_next %}
+<div id="infinite-scroll-sentinel"
+     class="col-span-full py-8 text-center text-slate-500"
+     hx-get="{{ next_page_url }}"
+     hx-trigger="revealed"
+     hx-target="this"
+     hx-swap="outerHTML">
+    <span class="inline-flex items-center gap-3 text-xs font-bold uppercase tracking-widest">
+        <span class="h-2 w-2 rounded-full bg-cyan-400 animate-ping"></span>
+        Loading more
+    </span>
+</div>
+{% elif total_count > 0 %}
+<div class="col-span-full py-8 text-center text-slate-600 text-xs font-bold uppercase tracking-widest">
+    End of catalog
+</div>
+{% endif %}

@@ -34,7 +34,11 @@
     </div>
 
     <div class="flex justify-center gap-4">
-        <a href="{{ url_for('store.index') }}" class="bg-white text-black px-8 py-3 rounded-full font-bold hover:bg-cyan-400 transition transform hover:scale-105 shadow-lg shadow-cyan-500/20">
+        <a href="{{ url_for('store.index') }}"
+           hx-get="{{ url_for('store.index') }}"
+           hx-target="#app-content"
+           hx-push-url="true"
+           class="bg-white text-black px-8 py-3 rounded-full font-bold hover:bg-cyan-400 transition transform hover:scale-105 shadow-lg shadow-cyan-500/20">
             Continue Shopping
         </a>
     </div>

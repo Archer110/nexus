@@ -4,9 +4,17 @@
 <div class="max-w-7xl mx-auto px-4 py-12">
     
     <div class="text-sm text-slate-500 mb-8">
-        <a href="{{ url_for('store.index') }}" class="hover:text-cyan-400 transition">Store</a>
+        <a href="{{ url_for('store.index') }}"
+           hx-get="{{ url_for('store.index') }}"
+           hx-target="#app-content"
+           hx-push-url="true"
+           class="hover:text-cyan-400 transition">Store</a>
         <span class="mx-2">/</span>
-        <a href="{{ url_for('store.index', cat=product.category) }}" class="hover:text-cyan-400 transition">{{ product.category }}</a>
+        <a href="{{ url_for('store.index', cat=product.category) }}"
+           hx-get="{{ url_for('store.index', cat=product.category) }}"
+           hx-target="#app-content"
+           hx-push-url="true"
+           class="hover:text-cyan-400 transition">{{ product.category }}</a>
         <span class="mx-2">/</span>
         <span class="text-slate-300">{{ product.name }}</span>
     </div>

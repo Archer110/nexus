@@ -5,7 +5,6 @@ import pytest
 from flask import Flask
 from sqlalchemy.exc import SQLAlchemyError
 
-import app
 from app.extensions import sql_db
 from app.models import Order, OrderItem
 from app.services.order_service import OrderService

@@ -5,6 +5,23 @@ from app.services.product_service import ProductService
 
 cart_bp = Blueprint("cart", __name__, url_prefix="/cart")
 
+
+def _cart_context():
+    cart = session.get("cart", [])
+    total = sum(item["price"] * item["qty"] for item in cart)
+    return cart, total
+
+
+def _render_checkout_summary():
+    cart, total = _cart_context()
+    return render_template(
+        "partials/checkout_summary.html",
+        items=cart,
+        total=total,
+        oob=True,
+    )
+
+
 @cart_bp.route("/add/<product_id>", methods=["POST"])
 def add_to_cart(product_id):
     """
@@ -71,10 +88,13 @@ def update_quantity(product_id, action):
     session.modified = True
 
     # Smart Response: Update the Drawer OR the Checkout Page depending on source
-    if request.headers.get("HX-Target") == "cart-drawer-content":
+    target = request.headers.get("HX-Target")
+    if target == "cart-drawer-content":
         return render_template("partials/cart_drawer.html", cart=cart)
+    if target == "checkout-summary":
+        return _render_checkout_summary()
     
-    # If on checkout page, refresh to update totals
+    # Non-HTMX fallback for regular form posts.
     return redirect(request.referrer or url_for("store.index"))
 
 
@@ -87,6 +107,9 @@ def remove_from_cart(product_id):
         ]
         session.modified = True
 
+    target = request.headers.get("HX-Target")
+    if target == "checkout-summary":
+        return _render_checkout_summary()
     if request.headers.get("HX-Request"):
         return render_template("partials/cart_drawer.html", cart=session.get("cart", []))
 
@@ -99,8 +122,7 @@ def checkout_page():
     Renders the Checkout UI.
     Calculates totals on the fly from the session data.
     """
-    cart = session.get("cart", [])
-    total = sum(item["price"] * item["qty"] for item in cart)
+    cart, total = _cart_context()
 
     return render_template("checkout.html", items=cart, total=total)
 

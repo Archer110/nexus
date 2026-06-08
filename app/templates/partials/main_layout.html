@@ -8,26 +8,6 @@
         <div id="store-product-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
             {% include 'partials/product_list.html' %}
         </div>
-        
-        <div class="mt-12 flex justify-center gap-2">
-            {% if page > 1 %}
-            <a href="{{ url_for('store.index', page=page-1, q=q, cat=cat) }}" 
-               class="px-4 py-2 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 text-white transition text-sm font-bold">
-               ← Previous
-            </a>
-            {% endif %}
-            
-            <span class="px-4 py-2 text-slate-500 text-sm font-mono flex items-center">
-                Page {{ page }}
-            </span>
-
-            {% if products|length == 9 %}
-            <a href="{{ url_for('store.index', page=page+1, q=q, cat=cat) }}" 
-               class="px-4 py-2 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 text-white transition text-sm font-bold">
-               Next →
-            </a>
-            {% endif %}
-        </div>
     </div>
     
 </div>
