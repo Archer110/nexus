@@ -1,10 +1,9 @@
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from bson import ObjectId
 from flask import current_app
-
 from sqlalchemy.exc import SQLAlchemyError
-from typing import Any, Dict, List, Optional, Tuple, Union
 
 from app.extensions import mongo, sql_db
 from app.models import Inventory

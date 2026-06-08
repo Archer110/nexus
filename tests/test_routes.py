@@ -1,6 +1,9 @@
 # tests/test_routes.py
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, patch
+
 
 # --- FIXTURES ---
 @pytest.fixture
@@ -8,13 +11,14 @@ def client(mock_app_context):
     """
     Creates a Flask test client using the mocked app context.
     """
-    # We need to import the real blueprints to register them
-    from app.routes.store import store_bp
-    from app.routes.cart import cart_bp
-    
     # Create a fresh Flask app for routing tests
     from flask import Flask
-    app = Flask(__name__)
+    
+    # We need to import the real blueprints to register them
+    from app.routes.cart import cart_bp
+    from app.routes.store import store_bp
+    template_dir = Path(__file__).resolve().parents[1] / "app" / "templates"
+    app = Flask(__name__, template_folder=str(template_dir))
     app.config["SECRET_KEY"] = "testing_key"
     app.config["TESTING"] = True
     

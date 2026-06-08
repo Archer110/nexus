@@ -1,8 +1,8 @@
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 from sqlalchemy import or_
-from typing import Dict, List, Optional, Any
 
 from app.extensions import mongo, sql_db
 from app.models import Inventory, Order, OrderItem

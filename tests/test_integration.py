@@ -1,9 +1,12 @@
 # tests/test_integration.py
-import pytest
 from datetime import datetime
-from app.models import Order, OrderItem, Inventory
-from app.extensions import sql_db
+
+import pytest
 from flask import Flask
+
+from app.extensions import sql_db
+from app.models import Inventory, Order, OrderItem
+
 
 @pytest.fixture
 def db_app():

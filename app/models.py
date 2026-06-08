@@ -1,8 +1,8 @@
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List
 
 from sqlalchemy.orm import Mapped
-from typing import Any, Dict, List
 
 from app.extensions import sql_db
 

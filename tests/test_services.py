@@ -1,7 +1,13 @@
 # tests/test_services.py
+from unittest.mock import ANY, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, ANY
+from flask import Flask
+from sqlalchemy.exc import SQLAlchemyError
+
 import app
+from app.extensions import sql_db
+from app.models import Order, OrderItem
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 
@@ -40,14 +46,14 @@ def test_create_product_rollback_on_sql_error(mocker, mock_mongo, mock_db):
     mock_mongo.products.insert_one.return_value.inserted_id = "mongo_id_123"
     
     # Simulate SQL Error
-    mock_db.commit.side_effect = Exception("SQL Connection Dead")
+    mock_db.commit.side_effect = SQLAlchemyError("SQL Connection Dead")
 
     # 2. Execute & Assert
-    with pytest.raises(Exception):
+    with pytest.raises(SQLAlchemyError):
         ProductService.create_product({}, 10)
 
     # 3. Verify Rollback
-    mock_db.session.rollback.assert_called_once()
+    mock_db.rollback.assert_called_once()
     # CRITICAL: Verify we cleaned up the Mongo document
     mock_mongo.products.delete_one.assert_called_with({"_id": "mongo_id_123"})
 
@@ -63,20 +69,26 @@ def test_get_catalog_merges_data(mocker, mock_mongo):
     mock_cursor = MagicMock()
     mock_cursor.skip.return_value.limit.return_value = [fake_product]
     mock_mongo.products.find.return_value.sort.return_value = mock_cursor
+    mock_mongo.products.count_documents.return_value = 1
 
-    # 2. Mock SQL Return (Inventory)
-    # Patch the 'Inventory.query' inside the service module
-    mock_inventory_query = mocker.patch("app.services.product_service.Inventory.query")
-    
     fake_inv = MagicMock()
     fake_inv.product_id = "prod_1"
     fake_inv.stock = 99
 
-    with app.app_context():
-        mock_inventory_query.filter.return_value.all.return_value = [fake_inv]
+    test_app = Flask(__name__)
+    test_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    test_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    test_app.config["PRODUCTS_PER_PAGE"] = 9
+    sql_db.init_app(test_app)
 
-        # 3. Execute
-        products, count = ProductService.get_catalog(page=1)
+    with test_app.app_context():
+        # 2. Mock SQL Return (Inventory)
+        # Patch after the app context is active so Flask-SQLAlchemy can resolve the descriptor.
+        with patch("app.services.product_service.Inventory.query") as mock_inventory_query:
+            mock_inventory_query.filter.return_value.all.return_value = [fake_inv]
+
+            # 3. Execute
+            products, count = ProductService.get_catalog(page=1, per_page=9)
 
     # 4. Assert
     assert len(products) == 1
@@ -87,19 +99,27 @@ def test_update_product_routes_correctly(mocker, mock_mongo, mock_db):
     """
     Scenario: Update 'stock' (SQL) vs 'price' (Mongo).
     """
-    # Test A: Stock Update (SQL)
-    mock_inventory = MagicMock()
-    mocker.patch("app.services.product_service.Inventory.query.get", return_value=mock_inventory)
-    
-    ProductService.update_product("prod_1", "stock", 20)
-    assert mock_inventory.stock == 20
-    mock_db.commit.assert_called()
+    product_id = "64b64b64b64b64b64b64b64b"
 
-    # Test B: Price Update (Mongo)
-    ProductService.update_product("prod_1", "price", 199.99)
-    mock_mongo.products.update_one.assert_called_with(
-        {"_id": ANY}, {"$set": {"price": 199.99}}
-    )
+    test_app = Flask(__name__)
+    test_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    test_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    sql_db.init_app(test_app)
+
+    with test_app.app_context():
+        # Test A: Stock Update (SQL)
+        mock_inventory = MagicMock(stock=10)
+        with patch("app.services.product_service.Inventory.query.get", return_value=mock_inventory):
+            updated_stock = ProductService.update_product(product_id, "stock", 20)
+
+        assert updated_stock == 20
+        mock_db.commit.assert_called()
+
+        # Test B: Price Update (Mongo)
+        ProductService.update_product(product_id, "price", 199.99)
+        mock_mongo.products.update_one.assert_called_with(
+            {"_id": ANY}, {"$set": {"price": 199.99}}
+        )
 
 # --- ORDER SERVICE TESTS (The "Strict" Logic) ---
 
@@ -149,18 +169,10 @@ def test_get_order_details_merges_mongo(mocker, mock_mongo):
     Scenario: Viewing an Order Receipt (Reverse Hybrid Join).
     Goal: Verify we fetch Product Names from Mongo using IDs from SQL.
     """
-    # 1. Mock SQL Order
-    mock_order = MagicMock()
-    mock_order.to_dict.return_value = {
-        "id": 1, 
-        "items": [{"product_id": "prod_1", "qty": 1, "price": 50}]
-    }
-    # Mock items relationship for ID extraction
-    mock_item_obj = MagicMock()
-    mock_item_obj.product_id_str = "prod_1"
-    mock_order.items = [mock_item_obj]
-
-    mocker.patch("app.services.order_service.Order.query.get", return_value=mock_order)
+    test_app = Flask(__name__)
+    test_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    test_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    sql_db.init_app(test_app)
 
     # 2. Mock Mongo Product Lookup
     # The service queries Mongo for these IDs
@@ -168,8 +180,29 @@ def test_get_order_details_merges_mongo(mocker, mock_mongo):
         {"_id": "prod_1", "name": "Super Widget", "image": "img.jpg"}
     ]
 
-    # 3. Execute
-    result = OrderService.get_order_with_details(1)
+    with test_app.app_context():
+        sql_db.create_all()
+
+        order = Order(
+            customer_name="Alice",
+            customer_email="alice@test.com",
+            shipping_address="123 Main St",
+            city="New York",
+            zip_code="10001",
+            total_amount=50.0,
+        )
+        order.items.append(
+            OrderItem(
+                product_id_str="prod_1",
+                quantity=1,
+                price_at_purchase=50.0,
+            )
+        )
+        sql_db.session.add(order)
+        sql_db.session.commit()
+
+        # 3. Execute
+        result = OrderService.get_order_with_details(order.id)
 
     # 4. Assert
     # The SQL data ("items") should now have Mongo data ("name") attached
