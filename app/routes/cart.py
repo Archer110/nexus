@@ -7,12 +7,30 @@ from app.contracts import CartItem, CartViewItem, CheckoutCustomer
 from app.money import money, money_value
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
+from app.validation import safe_redirect_target, session_cart
 
 cart_bp = Blueprint("cart", __name__, url_prefix="/cart")
 
 
+def _store_redirect():
+    return redirect(
+        safe_redirect_target(
+            request.referrer,
+            request.host_url,
+            url_for("store.index"),
+        )
+    )
+
+
 def _session_cart() -> list[CartItem]:
-    return cast(list[CartItem], session.get("cart", []))
+    raw_cart = session.get("cart", [])
+    cart = session_cart(raw_cart)
+    if isinstance(raw_cart, list) and raw_cart == cart:
+        return cast(list[CartItem], raw_cart)
+
+    session["cart"] = cart
+    session.modified = True
+    return cart
 
 
 def _cart_context() -> tuple[list[CartViewItem], Decimal]:
@@ -33,6 +51,7 @@ def _refresh_cart_from_catalog() -> None:
     product_ids = [str(item["product_id"]) for item in cart]
     products = ProductService.get_products_by_ids(product_ids)
 
+    refreshed_cart: list[CartItem] = []
     for item in cart:
         product = products.get(str(item["product_id"]))
         if not product:
@@ -45,8 +64,10 @@ def _refresh_cart_from_catalog() -> None:
                 "specs": product.get("specs", {}),
             }
         )
+        refreshed_cart.append(item)
 
     if cart:
+        session["cart"] = refreshed_cart
         session.modified = True
 
 
@@ -85,7 +106,7 @@ def _render_cart_error(message):
         return _render_cart_drawer(error=message)
 
     flash(message, "error")
-    return redirect(request.referrer or url_for("store.index"))
+    return _store_redirect()
 
 
 @cart_bp.route("/add/<product_id>", methods=["POST"])
@@ -151,7 +172,7 @@ def add_to_cart(product_id):
     if request.headers.get("HX-Request"):
         return _render_cart_drawer()
 
-    return redirect(request.referrer or url_for("store.index"))
+    return _store_redirect()
 
 
 @cart_bp.route("/update/<product_id>/<action>", methods=["POST"])
@@ -192,14 +213,14 @@ def update_quantity(product_id, action):
         return _render_checkout_summary()
 
     # Non-HTMX fallback for regular form posts.
-    return redirect(request.referrer or url_for("store.index"))
+    return _store_redirect()
 
 
 @cart_bp.route("/remove/<product_id>", methods=["DELETE", "GET"])
 def remove_from_cart(product_id):
     if "cart" in session:
         session["cart"] = [
-            item for item in session["cart"] if item["product_id"] != product_id
+            item for item in _session_cart() if item["product_id"] != product_id
         ]
         session.modified = True
 

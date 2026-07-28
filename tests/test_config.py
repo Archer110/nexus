@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from flask_session.redis import RedisSessionInterface
 
-from config import ProductionConfig
+from config import ProductionConfig, _environment_int
 
 
 def test_application_factory_registers_complete_application_wiring(app):
@@ -31,6 +31,19 @@ def test_application_factory_rejects_invalid_session_lifetime(app_factory):
         match="PERMANENT_SESSION_LIFETIME must be a positive duration",
     ):
         app_factory(PERMANENT_SESSION_LIFETIME=timedelta())
+
+
+@pytest.mark.parametrize("setting", ["PRODUCTS_PER_PAGE", "ADMIN_PER_PAGE"])
+def test_application_factory_rejects_invalid_page_sizes(app_factory, setting):
+    with pytest.raises(RuntimeError, match=f"{setting} must be a positive integer"):
+        app_factory(**{setting: 0})
+
+
+def test_environment_integer_reports_the_invalid_setting(monkeypatch):
+    monkeypatch.setenv("NEXUS_TEST_INTEGER", "invalid")
+
+    with pytest.raises(RuntimeError, match="NEXUS_TEST_INTEGER must be an integer"):
+        _environment_int("NEXUS_TEST_INTEGER", 1)
 
 
 def test_production_profile_enforces_secure_session_cookies():

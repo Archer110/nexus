@@ -15,10 +15,13 @@ from app.models import (
 )
 from app.money import money
 from app.services.product_service import ProductService
+from app.validation import checkout_customer, positive_int, search_term
 
 
 class OrderService:
     """Manage transactional inventory and order state."""
+
+    MAX_ORDER_TOTAL = Decimal("9999999999.99")
 
     @staticmethod
     def create_order(
@@ -28,19 +31,7 @@ class OrderService:
         if not cart_items:
             return None
 
-        customer_fields = {
-            "customer_name": customer_data.get("name"),
-            "customer_email": customer_data.get("email"),
-            "shipping_address": customer_data.get("address"),
-            "city": customer_data.get("city"),
-            "zip_code": customer_data.get("zip"),
-        }
-        normalized_customer = {
-            field: str(value).strip() if value is not None else ""
-            for field, value in customer_fields.items()
-        }
-        if any(not value for value in normalized_customer.values()):
-            raise ValueError("All customer and shipping fields are required.")
+        normalized_customer = checkout_customer(customer_data)
 
         product_ids = sorted({str(item["product_id"]) for item in cart_items})
 
@@ -61,9 +52,7 @@ class OrderService:
             order_items: list[OrderItem] = []
 
             for item in cart_items:
-                quantity = int(item["qty"])
-                if quantity <= 0:
-                    raise ValueError("Cart quantities must be positive.")
+                quantity = positive_int(item["qty"], "Cart quantity")
 
                 product_id = str(item["product_id"])
                 product = products_by_id.get(product_id)
@@ -88,6 +77,8 @@ class OrderService:
                     )
                 )
                 total_amount += price * quantity
+                if total_amount > OrderService.MAX_ORDER_TOTAL:
+                    raise ValueError("Order total exceeds the supported limit.")
 
             order = Order(
                 **normalized_customer,
@@ -163,6 +154,7 @@ class OrderService:
         search_query: str | None = None,
     ) -> list[dict[str, Any]]:
         statement = select(Order).options(selectinload(Order.items))
+        search_query = search_term(search_query)
 
         if search_query:
             term = f"%{search_query}%"

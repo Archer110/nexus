@@ -42,6 +42,29 @@ def test_store_htmx_partial_render(mock_service, client):
     # Here we assume render_template works if status is 200.
 
 
+@patch("app.routes.store.ProductService")
+def test_store_normalizes_pagination_and_rejects_unsafe_filter_keys(
+    mock_service, client
+):
+    mock_service.get_catalog.return_value = ([], 0)
+    mock_service.get_facets.return_value = ([], {})
+
+    response = client.get(
+        "/",
+        query_string=[
+            ("page", "not-a-number"),
+            ("$where", "unsafe"),
+            ("specs.color", "unsafe"),
+            ("Color", " Black "),
+        ],
+    )
+
+    assert response.status_code == 200
+    call_args = mock_service.get_catalog.call_args.kwargs
+    assert call_args["page"] == 1
+    assert call_args["spec_filters"] == {"Color": ["Black"]}
+
+
 # --- CART ROUTE TESTS ---
 
 
@@ -73,6 +96,25 @@ def test_add_to_cart_updates_session(mock_service, client):
     assert response.status_code == 302
 
 
+@patch("app.routes.cart.ProductService")
+def test_add_to_cart_does_not_follow_an_external_referrer(mock_service, client):
+    mock_service.get_product_details.return_value = {
+        "_id": "123",
+        "name": "Test Item",
+        "price": "10.00",
+        "image": "img.png",
+        "stock": 5,
+    }
+
+    response = client.post(
+        "/cart/add/123",
+        headers={"Referer": "https://attacker.example/redirect"},
+    )
+
+    assert response.status_code == 302
+    assert response.location == "/"
+
+
 def test_checkout_requires_cart(client):
     """
     Scenario: POST /cart/checkout with empty cart.
@@ -83,6 +125,18 @@ def test_checkout_requires_cart(client):
     assert response.status_code == 302
     # Should redirect to index (Store)
     assert "/" in response.location
+
+
+def test_checkout_recovers_from_a_malformed_server_side_cart(client):
+    with client.session_transaction() as sess:
+        sess["cart"] = {"unexpected": "shape"}
+
+    response = client.get("/cart/checkout-page")
+
+    assert response.status_code == 200
+    assert b"Your cart is empty." in response.data
+    with client.session_transaction() as sess:
+        assert sess["cart"] == []
 
 
 @patch("app.routes.cart.ProductService")
@@ -161,6 +215,29 @@ def test_checkout_displays_exact_authoritative_total(mock_service, client):
 
     assert response.status_code == 200
     assert b"Pay $1,371.80" in response.data
+
+
+@patch("app.routes.cart.ProductService")
+def test_checkout_drops_products_missing_from_the_catalog(mock_service, client):
+    with client.session_transaction() as sess:
+        sess["cart"] = [
+            {
+                "product_id": "123",
+                "name": "Removed",
+                "price": "10.00",
+                "image": "removed.png",
+                "qty": 1,
+            }
+        ]
+
+    mock_service.get_products_by_ids.return_value = {}
+
+    response = client.get("/cart/checkout-page")
+
+    assert response.status_code == 200
+    assert b"Your cart is empty." in response.data
+    with client.session_transaction() as sess:
+        assert sess["cart"] == []
 
 
 @patch("app.routes.cart.ProductService")
@@ -299,6 +376,19 @@ def test_admin_products_htmx_renders_panel(mock_service, client):
     assert call_args["search_query"] == "laptop"
 
 
+@patch("app.routes.admin.ProductService")
+def test_admin_products_normalizes_invalid_page(mock_service, client):
+    mock_service.get_admin_catalog.return_value = ([], 0)
+
+    with client.session_transaction() as sess:
+        sess["admin_logged_in"] = True
+
+    response = client.get("/admin/products?page=invalid")
+
+    assert response.status_code == 200
+    assert mock_service.get_admin_catalog.call_args.kwargs["page"] == 1
+
+
 @patch("app.routes.admin.OrderService")
 def test_admin_orders_htmx_search_renders_panel(mock_service, client):
     """
@@ -374,3 +464,42 @@ def test_admin_rejects_non_object_product_specs(mock_service, client):
 
     assert response.status_code == 400
     mock_service.create_product.assert_not_called()
+
+
+@patch("app.routes.admin.ProductService")
+def test_admin_returns_validation_errors_from_product_service(mock_service, client):
+    mock_service.create_product.side_effect = ValueError("Price is required.")
+
+    with client.session_transaction() as sess:
+        sess["admin_logged_in"] = True
+
+    response = client.post(
+        "/admin/products/add",
+        data={
+            "name": "Test",
+            "category": "Test",
+            "price": "",
+            "stock": "1",
+            "specs_json": "{}",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.text == "Price is required."
+
+
+@patch("app.routes.admin.ProductService")
+def test_admin_returns_not_found_when_product_update_matches_nothing(
+    mock_service, client
+):
+    mock_service.update_product.return_value = None
+
+    with client.session_transaction() as sess:
+        sess["admin_logged_in"] = True
+
+    response = client.post(
+        "/admin/products/update/64b64b64b64b64b64b64b64b?field=price",
+        data={"price": "10.00"},
+    )
+
+    assert response.status_code == 404

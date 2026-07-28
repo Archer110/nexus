@@ -16,6 +16,7 @@ from flask import (
 # We import Services, NOT Models or Database extensions.
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
+from app.validation import page_number, search_term
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -89,9 +90,9 @@ def dashboard():
 @admin_bp.route("/products")
 @admin_required
 def admin_products():
-    page = max(int(request.args.get("page", 1)), 1)
+    page = page_number(request.args.get("page"))
     per_page = current_app.config.get("ADMIN_PER_PAGE", 10)
-    search_query = request.args.get("q", "")
+    search_query = search_term(request.args.get("q"))
 
     # Call the specialized Admin Catalog method
     products, total_products = ProductService.get_admin_catalog(
@@ -127,9 +128,7 @@ def admin_add_product():
         specs = json.loads(request.form.get("specs_json", "{}"))
         if not isinstance(specs, dict):
             raise ValueError
-    except (TypeError, json.JSONDecodeError):
-        return "Product specifications must be a JSON object.", 400
-    except ValueError:
+    except (TypeError, ValueError, json.JSONDecodeError):
         return "Product specifications must be a JSON object.", 400
 
     data = {
@@ -143,7 +142,10 @@ def admin_add_product():
     stock = request.form.get("stock", 0)
 
     # 2. Delegate to Service
-    new_product = ProductService.create_product(data, stock)
+    try:
+        new_product = ProductService.create_product(data, stock)
+    except ValueError as error:
+        return str(error), 400
 
     # 3. Render Row (HTMX)
     return render_template("admin/partials/product_row.html", product=new_product)
@@ -156,10 +158,18 @@ def admin_update_product(product_id):
     Handles inline edits from the table (Stock, Price, etc).
     """
     field = request.args.get("field")
-    value = request.form.get("value") or request.form.get(field)
+    value = request.form.get("value")
+    if value is None and field:
+        value = request.form.get(field)
 
     # The Service handles the logic of "Which DB do I update?"
-    new_val = ProductService.update_product(product_id, field, value)
+    try:
+        new_val = ProductService.update_product(product_id, field, value)
+    except ValueError as error:
+        return str(error), 400
+
+    if new_val is None:
+        abort(404)
 
     if field == "price":
         return f"${new_val}"
@@ -169,7 +179,12 @@ def admin_update_product(product_id):
 @admin_bp.route("/products/delete/<product_id>", methods=["DELETE"])
 @admin_required
 def admin_delete_product(product_id):
-    ProductService.delete_product(product_id)
+    try:
+        deleted = ProductService.delete_product(product_id)
+    except ValueError as error:
+        return str(error), 400
+    if not deleted:
+        abort(404)
     return ""  # HTTP 200 OK
 
 
@@ -177,7 +192,7 @@ def admin_delete_product(product_id):
 @admin_bp.route("/orders")
 @admin_required
 def admin_orders():
-    search_query = request.args.get("q", "")
+    search_query = search_term(request.args.get("q"))
 
     orders = OrderService.get_orders(search_query)
 

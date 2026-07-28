@@ -1,6 +1,7 @@
 from flask import Blueprint, abort, current_app, render_template, request, url_for
 
 from app.services.product_service import ProductService
+from app.validation import page_number, search_term, spec_filters
 
 store_bp = Blueprint("store", __name__)
 
@@ -21,20 +22,22 @@ def index():
     - Handles HTMX partial rendering for the 'Modern Monolith' feel.
     """
     # 1. Parse Standard Query Params
-    page = max(int(request.args.get("page", 1)), 1)
-    query = request.args.get("q", "")
-    category = request.args.get("cat", "")
+    page = page_number(request.args.get("page"))
+    query = search_term(request.args.get("q"))
+    category = search_term(request.args.get("cat"))
     per_page = current_app.config.get("PRODUCTS_PER_PAGE", 9)
 
     # 2. Extract Dynamic Spec Filters (The "NoSQL" Magic)
     # Any query param that isn't 'page', 'q', or 'cat' is treated as a product spec.
     # Example: ?cat=Laptops&RAM=16GB&Color=Silver
     reserved_keys = ["page", "q", "cat"]
-    spec_filters = {
-        key: request.args.getlist(key)
-        for key in request.args.keys()
-        if key not in reserved_keys
-    }
+    filters = spec_filters(
+        {
+            key: request.args.getlist(key)
+            for key in request.args.keys()
+            if key not in reserved_keys
+        }
+    )
 
     # 3. Call Service (The "Hybrid Join")
     # The route doesn't know this data comes from Mongo + SQL. It just gets a list.
@@ -43,7 +46,7 @@ def index():
         per_page=per_page,
         search_query=query,
         category=category,
-        spec_filters=spec_filters,
+        spec_filters=filters,
     )
 
     # 4. Call Service (Sidebar Data)
@@ -62,7 +65,7 @@ def index():
         "next_page_url": _store_url_with_page(page + 1),
         "cat": category,
         "q": query,
-        "spec_filters": spec_filters,
+        "spec_filters": filters,
     }
 
     # 6. Render (HTMX Support)

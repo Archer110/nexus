@@ -8,6 +8,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _environment_int(name: str, default: int) -> int:
+    value = os.environ.get(name, str(default))
+    try:
+        return int(value)
+    except ValueError as error:
+        raise RuntimeError(f"{name} must be an integer.") from error
+
+
 class BaseConfig:
     """Configuration shared by every application environment."""
 
@@ -21,7 +29,7 @@ class BaseConfig:
     SESSION_KEY_PREFIX = "nexus:session:"
     SESSION_PERMANENT = True
     PERMANENT_SESSION_LIFETIME = timedelta(
-        hours=int(os.environ.get("SESSION_TTL_HOURS", 24))
+        hours=_environment_int("SESSION_TTL_HOURS", 24)
     )
     SESSION_REFRESH_EACH_REQUEST = True
     SESSION_SERIALIZATION_FORMAT = "msgpack"
@@ -29,8 +37,8 @@ class BaseConfig:
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
 
-    PRODUCTS_PER_PAGE = int(os.environ.get("PRODUCTS_PER_PAGE", 9))
-    ADMIN_PER_PAGE = int(os.environ.get("ADMIN_PER_PAGE", 20))
+    PRODUCTS_PER_PAGE = _environment_int("PRODUCTS_PER_PAGE", 9)
+    ADMIN_PER_PAGE = _environment_int("ADMIN_PER_PAGE", 20)
 
 
 class DevelopmentConfig(BaseConfig):
@@ -80,3 +88,8 @@ def validate_config(config: Mapping[str, Any]) -> None:
     lifetime = config.get("PERMANENT_SESSION_LIFETIME")
     if not isinstance(lifetime, timedelta) or lifetime.total_seconds() <= 0:
         raise RuntimeError("PERMANENT_SESSION_LIFETIME must be a positive duration.")
+
+    for setting in ("PRODUCTS_PER_PAGE", "ADMIN_PER_PAGE"):
+        value = config.get(setting)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise RuntimeError(f"{setting} must be a positive integer.")

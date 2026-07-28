@@ -58,12 +58,55 @@ def test_create_product_rollback_on_sql_error(mocker, mock_mongo, mock_db):
 
     # 2. Execute & Assert
     with pytest.raises(SQLAlchemyError):
-        ProductService.create_product({}, 10)
+        ProductService.create_product(
+            {"name": "Test Item", "price": "10.00", "category": "Test"},
+            10,
+        )
 
     # 3. Verify Rollback
     mock_db.rollback.assert_called_once()
     # CRITICAL: Verify we cleaned up the Mongo document
     mock_mongo.products.delete_one.assert_called_with({"_id": "mongo_id_123"})
+
+
+@pytest.mark.parametrize(
+    ("data", "stock", "message"),
+    [
+        (
+            {"name": "", "price": "10.00", "category": "Test"},
+            "1",
+            "Product name is required",
+        ),
+        (
+            {"name": "Test", "price": "", "category": "Test"},
+            "1",
+            "Price is required",
+        ),
+        (
+            {"name": "Test", "price": "10.00", "category": "Test"},
+            "1.5",
+            "Stock must be a whole number",
+        ),
+        (
+            {
+                "name": "Test",
+                "price": "10.00",
+                "category": "Test",
+                "specs": {"unsafe.key": "value"},
+            },
+            "1",
+            "Specification names",
+        ),
+    ],
+)
+def test_create_product_rejects_invalid_input_before_writing(
+    data, stock, message, mock_mongo, mock_db
+):
+    with pytest.raises(ValueError, match=message):
+        ProductService.create_product(data, stock)
+
+    mock_mongo.products.insert_one.assert_not_called()
+    mock_db.add.assert_not_called()
 
 
 def test_get_catalog_merges_data(mock_mongo, mock_db):
@@ -98,6 +141,46 @@ def test_get_catalog_merges_data(mock_mongo, mock_db):
     assert products[0]["price"] == "1499.90"
     assert products[0]["image"] == "https://placehold.co/600x400"
     assert products[0]["specs"] == {}
+
+
+def test_get_catalog_skips_malformed_mongo_documents(mock_mongo, mock_db):
+    valid_id = ObjectId()
+    malformed_id = ObjectId()
+    mock_cursor = MagicMock()
+    mock_cursor.skip.return_value.limit.return_value = [
+        {"_id": malformed_id, "name": "Missing Price"},
+        {"_id": valid_id, "name": "Valid", "price": Decimal128("10.00")},
+    ]
+    mock_mongo.products.find.return_value.sort.return_value = mock_cursor
+    mock_mongo.products.count_documents.return_value = 2
+    mock_db.scalars.return_value.all.return_value = []
+
+    products, count = ProductService.get_catalog(page=1, per_page=9)
+
+    assert count == 2
+    assert [product["_id"] for product in products] == [str(valid_id)]
+
+
+def test_get_catalog_rejects_unsafe_filter_paths_from_non_http_callers(
+    mock_mongo, mock_db
+):
+    mock_cursor = MagicMock()
+    mock_cursor.skip.return_value.limit.return_value = []
+    mock_mongo.products.find.return_value.sort.return_value = mock_cursor
+    mock_mongo.products.count_documents.return_value = 0
+    mock_db.scalars.return_value.all.return_value = []
+
+    ProductService.get_catalog(
+        spec_filters={
+            "$where": ["unsafe"],
+            "nested.key": ["unsafe"],
+            "Color": ["Black"],
+        }
+    )
+
+    assert mock_mongo.products.count_documents.call_args.args[0] == {
+        "specs.Color": {"$in": ["Black"]}
+    }
 
 
 def test_get_products_by_ids_normalizes_current_and_legacy_prices(mock_mongo):
@@ -150,6 +233,44 @@ def test_update_product_routes_correctly(mocker, mock_mongo, mock_db):
             {"_id": ANY}, {"$set": {"price": Decimal128("199.99")}}
         )
         assert updated_price == "199.99"
+
+
+def test_update_product_rejects_unsupported_fields_before_writing(mock_mongo, mock_db):
+    with pytest.raises(ValueError, match="Unsupported product field"):
+        ProductService.update_product(
+            "64b64b64b64b64b64b64b64b",
+            "$rename",
+            "unsafe",
+        )
+
+    mock_mongo.products.update_one.assert_not_called()
+    mock_db.get.assert_not_called()
+
+
+def test_delete_product_restores_mongo_document_when_sql_commit_fails(
+    mock_mongo, mock_db
+):
+    product_id = "64b64b64b64b64b64b64b64b"
+    object_id = ObjectId(product_id)
+    product_document = {
+        "_id": object_id,
+        "name": "Test",
+        "price": Decimal128("10.00"),
+    }
+    mock_mongo.products.find_one.return_value = product_document
+    mock_mongo.products.delete_one.return_value.deleted_count = 1
+    mock_db.get.return_value = MagicMock()
+    mock_db.commit.side_effect = SQLAlchemyError("SQL Connection Dead")
+
+    with pytest.raises(SQLAlchemyError):
+        ProductService.delete_product(product_id)
+
+    mock_db.rollback.assert_called_once()
+    mock_mongo.products.replace_one.assert_called_once_with(
+        {"_id": object_id},
+        product_document,
+        upsert=True,
+    )
 
 
 # --- ORDER SERVICE TESTS (The "Strict" Logic) ---
@@ -243,6 +364,37 @@ def test_create_order_out_of_stock(mocker, mock_db):
     # Assert Safety
     mock_db.commit.assert_not_called()  # Ensure no partial order saved
     mock_db.rollback.assert_called()  # Ensure transaction rolled back
+
+
+def test_create_order_rejects_invalid_customer_before_querying_datastores(
+    mocker, mock_db
+):
+    catalog = mocker.patch(
+        "app.services.order_service.ProductService.get_products_by_ids"
+    )
+    cart = [
+        {
+            "product_id": "prod_1",
+            "name": "Test Product",
+            "image": "product.png",
+            "specs": {},
+            "qty": 1,
+            "price": "10.00",
+        }
+    ]
+    customer = {
+        "name": "Alice",
+        "email": "invalid",
+        "address": "123 Main St",
+        "city": "Tehran",
+        "zip": "12345",
+    }
+
+    with pytest.raises(ValueError, match="valid email"):
+        OrderService.create_order(customer, cart)
+
+    catalog.assert_not_called()
+    mock_db.scalars.assert_not_called()
 
 
 def test_get_order_details_uses_purchase_snapshot():
