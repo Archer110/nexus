@@ -15,8 +15,9 @@ __pycache__/
 # Flask
 instance/
 
-# Migrations cache
-migrations/__pycache__/
-
 # Tools
+.coverage
+.pytest_cache/
 .ruff_cache/
+.mypy_cache/
+htmlcov/
