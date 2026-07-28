@@ -1,11 +1,12 @@
 # tests/test_integration.py
 from datetime import datetime
+from decimal import Decimal
 
 import pytest
 from flask import Flask
 
 from app.extensions import sql_db
-from app.models import Inventory, Order, OrderItem
+from app.models import Inventory, Order, OrderItem, OrderStatus
 from app.services.order_service import OrderService
 
 
@@ -56,12 +57,22 @@ def test_order_relationships_and_cascades(db_app):
         shipping_address="123 Main St",
         city="New York",
         zip_code="10001",
-        total_amount=50.0,
+        total_amount=Decimal("50.00"),
     )
 
     # 2. Add Items
-    item1 = OrderItem(product_id_str="p1", quantity=1, price_at_purchase=25.0)
-    item2 = OrderItem(product_id_str="p2", quantity=1, price_at_purchase=25.0)
+    item1 = OrderItem(
+        product_id_str="p1",
+        product_name="Product One",
+        quantity=1,
+        price_at_purchase=Decimal("25.00"),
+    )
+    item2 = OrderItem(
+        product_id_str="p2",
+        product_name="Product Two",
+        quantity=1,
+        price_at_purchase=Decimal("25.00"),
+    )
     order.items.append(item1)
     order.items.append(item2)
 
@@ -79,7 +90,7 @@ def test_order_relationships_and_cascades(db_app):
     sql_db.session.commit()
 
     # Verify items are gone from DB
-    assert OrderItem.query.filter_by(order_id=order_id).count() == 0
+    assert sql_db.session.query(OrderItem).filter_by(order_id=order_id).count() == 0
 
 
 def test_order_constraints_enforcement(db_app):
@@ -106,13 +117,14 @@ def test_cancelling_order_restores_inventory_once(db_app):
         shipping_address="123 Main St",
         city="Tehran",
         zip_code="12345",
-        total_amount=20.0,
-        status="Processing",
+        total_amount=Decimal("20.00"),
+        status=OrderStatus.PROCESSING,
         items=[
             OrderItem(
                 product_id_str="product_1",
+                product_name="Product One",
                 quantity=2,
-                price_at_purchase=10.0,
+                price_at_purchase=Decimal("10.00"),
             )
         ],
     )
@@ -121,7 +133,7 @@ def test_cancelling_order_restores_inventory_once(db_app):
 
     updated_order = OrderService.update_status(order.id, "Cancelled")
 
-    assert updated_order.status == "Cancelled"
+    assert updated_order.status is OrderStatus.CANCELLED
     assert sql_db.session.get(Inventory, "product_1").stock == 5
 
     with pytest.raises(ValueError, match="cannot move"):
@@ -140,10 +152,25 @@ def test_revenue_excludes_cancelled_orders(db_app):
     }
     sql_db.session.add_all(
         [
-            Order(**common_fields, total_amount=100.0, status="Delivered"),
-            Order(**common_fields, total_amount=75.0, status="Cancelled"),
+            Order(
+                **common_fields,
+                total_amount=Decimal("100.00"),
+                status=OrderStatus.DELIVERED,
+            ),
+            Order(
+                **common_fields,
+                total_amount=Decimal("75.00"),
+                status=OrderStatus.CANCELLED,
+            ),
         ]
     )
     sql_db.session.commit()
 
-    assert OrderService.get_total_revenue() == 100.0
+    assert OrderService.get_total_revenue() == Decimal("100.00")
+
+
+def test_inventory_rejects_negative_stock(db_app):
+    sql_db.session.add(Inventory(product_id="product_1", stock=-1))
+
+    with pytest.raises(Exception):
+        sql_db.session.commit()

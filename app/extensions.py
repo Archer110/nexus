@@ -1,9 +1,23 @@
-# app/extensions.py
-from flask_migrate import Migrate
+from typing import Any
+
+from flask_migrate import Migrate  # type: ignore[import-untyped]
 from flask_pymongo import PyMongo
 from flask_sqlalchemy import SQLAlchemy
+from pymongo.database import Database
+from sqlalchemy.orm import DeclarativeBase
 
-# We create the instances here, but we don't connect them yet.
+
+class Base(DeclarativeBase):
+    pass
+
+
 mongo = PyMongo()
-sql_db = SQLAlchemy()
+sql_db = SQLAlchemy(model_class=Base)
 migrate = Migrate()
+
+
+def get_mongo_db() -> Database[dict[str, Any]]:
+    database = mongo.db
+    if database is None:
+        raise RuntimeError("MongoDB has not been initialized.")
+    return database

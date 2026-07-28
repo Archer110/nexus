@@ -1,12 +1,13 @@
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 from faker import Faker
+from sqlalchemy import delete
 
 from app import create_app
-from app.extensions import mongo, sql_db
-from app.models import Inventory
+from app.extensions import get_mongo_db, sql_db
+from app.models import Inventory, Order, OrderItem
 
 fake = Faker()
 app = create_app()
@@ -95,7 +96,8 @@ def gen_vehicle_specs(base_specs):
 
 # --- 2. CATEGORY DISPATCHER ---
 # Determines which Spec Generator to use based on the API Category
-def get_specs_for_category(category_name, base_specs={}):
+def get_specs_for_category(category_name, base_specs=None):
+    base_specs = base_specs or {}
     cat = category_name.lower()
 
     # Map API categories to our Generators
@@ -153,15 +155,21 @@ def add_global_specs(specs):
 def seed_data():
     with app.app_context():
         print("☢️  NUKE PROTOCOL: Wiping all data...")
-        mongo.db.products.delete_many({})
-        sql_db.drop_all()
-        sql_db.create_all()
+        get_mongo_db().products.delete_many({})
+        sql_db.session.execute(delete(OrderItem))
+        sql_db.session.execute(delete(Order))
+        sql_db.session.execute(delete(Inventory))
+        sql_db.session.commit()
 
         # A. FETCH BASE DATA
         print("🌍 Fetching Global Catalog (DummyJSON)...")
         try:
-            resp = requests.get(API_URL).json()
+            response = requests.get(API_URL, timeout=30)
+            response.raise_for_status()
+            resp = response.json()
             source_products = resp.get("products", [])
+            if not source_products:
+                raise ValueError("The source catalog is empty.")
             print(f"   - Retrieved {len(source_products)} base templates.")
         except Exception as e:
             print(f"❌ Critical Error: Could not fetch API. {e}")
@@ -239,7 +247,7 @@ def seed_data():
 
         # Insert in chunks is better, but loop is safer for ID capture in this specific hybrid setup
         for i, p_doc in enumerate(products_to_insert):
-            res = mongo.db.products.insert_one(p_doc)
+            res = get_mongo_db().products.insert_one(p_doc)
 
             # Random Stock Generation
             stock_qty = 0 if random.random() < 0.1 else random.randint(1, 300)
@@ -247,7 +255,7 @@ def seed_data():
             inv = Inventory(
                 product_id=str(res.inserted_id),
                 stock=stock_qty,
-                last_updated=datetime.utcnow(),
+                last_updated=datetime.now(timezone.utc),
             )
             sql_inventory.append(inv)
 

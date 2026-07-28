@@ -28,9 +28,4 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_bp)
     app.register_blueprint(cart_bp)
 
-    # 4. Create SQL Tables (Dev Mode)
-    # In production, you would use Flask-Migrate
-    with app.app_context():
-        sql_db.create_all()
-
     return app

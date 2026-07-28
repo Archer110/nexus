@@ -1,116 +1,162 @@
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Dict, List
+from __future__ import annotations
 
-from sqlalchemy.orm import Mapped
+from datetime import datetime, timezone
+from decimal import Decimal
+from enum import StrEnum
+from typing import Any
 
-from app.extensions import sql_db
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+)
+from sqlalchemy import (
+    Enum as SqlEnum,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-# --- MONGODB MODELS (Documentation & Type Hinting) ---
-# MongoDB is schema-less, but we define this Data Class so
-# developers know what a "Product" document looks like.
-
-
-@dataclass
-class ProductDocument:
-    """
-    Defines the shape of the MongoDB 'products' document.
-    This is not an ORM model; it is a reference for the application layer.
-    """
-
-    _id: str
-    name: str
-    price: float
-    category: str
-    image: str
-    description: str
-    specs: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.now)
+from app.extensions import Base
 
 
-# --- SQLALCHEMY MODELS (Strict Schema Enforcement) ---
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
-class Inventory(sql_db.Model):
-    """
-    The 'Bridge' Table.
-    Maps a MongoDB Product ID (string) to a SQL Stock Count (integer).
-    """
+class OrderStatus(StrEnum):
+    PROCESSING = "Processing"
+    SHIPPED = "Shipped"
+    DELIVERED = "Delivered"
+    CANCELLED = "Cancelled"
 
+
+ORDER_STATUS_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
+    OrderStatus.PROCESSING: frozenset({OrderStatus.SHIPPED, OrderStatus.CANCELLED}),
+    OrderStatus.SHIPPED: frozenset({OrderStatus.DELIVERED}),
+    OrderStatus.DELIVERED: frozenset(),
+    OrderStatus.CANCELLED: frozenset(),
+}
+
+
+class Inventory(Base):
     __tablename__ = "inventory"
+    __table_args__ = (
+        CheckConstraint(
+            "stock >= 0",
+            name="ck_inventory_stock_nonnegative",
+        ),
+    )
 
-    # We use String(24) because MongoDB ObjectIds are 24-char hex strings
-    product_id: str = sql_db.Column(sql_db.String(24), primary_key=True)
-    stock: int = sql_db.Column(sql_db.Integer, nullable=False, default=0)
-    last_updated: datetime = sql_db.Column(
-        sql_db.DateTime, default=datetime.now, onupdate=datetime.now
+    product_id: Mapped[str] = mapped_column(String(24), primary_key=True)
+    stock: Mapped[int] = mapped_column(default=0, nullable=False)
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
     )
 
     def __repr__(self) -> str:
         return f"<Inventory {self.product_id}: {self.stock}>"
 
 
-class OrderItem(sql_db.Model):
-    """
-    The 'Ledger' Lines.
-    Stores the specific items in an order.
-    CRITICAL: We freeze the price here so future price changes don't affect history.
-    """
-
+class OrderItem(Base):
     __tablename__ = "order_items"
-
-    id: int = sql_db.Column(sql_db.Integer, primary_key=True)
-
-    # Link to Parent Order
-    order_id: int = sql_db.Column(
-        sql_db.Integer, sql_db.ForeignKey("orders.id"), nullable=False
+    __table_args__ = (
+        CheckConstraint(
+            "quantity > 0",
+            name="ck_order_items_quantity_positive",
+        ),
+        CheckConstraint(
+            "price_at_purchase >= 0",
+            name="ck_order_items_price_nonnegative",
+        ),
+        Index("ix_order_items_product_id", "product_id_str"),
     )
 
-    # Link to MongoDB Product (Logical Reference)
-    # This is the "Polyglot Key"
-    product_id_str: str = sql_db.Column(sql_db.String(24), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    product_id_str: Mapped[str] = mapped_column(String(24), nullable=False)
+    product_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    product_image: Mapped[str | None] = mapped_column(String(500))
+    product_specs: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    quantity: Mapped[int] = mapped_column(nullable=False)
+    price_at_purchase: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
 
-    # Transaction Snapshot
-    quantity: int = sql_db.Column(sql_db.Integer, nullable=False)
-    price_at_purchase: float = sql_db.Column(sql_db.Float, nullable=False)
+    order: Mapped[Order] = relationship(back_populates="items")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "product_id": self.product_id_str,
+            "name": self.product_name,
+            "image": self.product_image or "/static/placeholder.png",
+            "specs": self.product_specs,
             "quantity": self.quantity,
-            "price": self.price_at_purchase,
+            "price": f"{self.price_at_purchase:.2f}",
         }
 
 
-class Order(sql_db.Model):
-    """
-    The 'Ledger' Header.
-    Stores the WHO, WHEN, and HOW MUCH.
-    """
-
+class Order(Base):
     __tablename__ = "orders"
-
-    id: int = sql_db.Column(sql_db.Integer, primary_key=True)
-
-    # Customer Data (Strictly Typed)
-    customer_name: str = sql_db.Column(sql_db.String(100), nullable=False)
-    customer_email: str = sql_db.Column(sql_db.String(120), nullable=False)
-    shipping_address: str = sql_db.Column(sql_db.String(255), nullable=False)
-    city: str = sql_db.Column(sql_db.String(100), nullable=False)
-    zip_code: str = sql_db.Column(sql_db.String(20), nullable=False)
-
-    # Financial Data
-    total_amount: float = sql_db.Column(sql_db.Float, nullable=False)
-    status: str = sql_db.Column(sql_db.String(20), default="Processing")
-    created_at: datetime = sql_db.Column(sql_db.DateTime, default=datetime.now)
-
-    # Relationship: One Order has Many Items
-    # cascade="all, delete-orphan" means if we delete the Order, the Items die too.
-    items: Mapped[List["OrderItem"]] = sql_db.relationship(
-        "OrderItem", backref="order", cascade="all, delete-orphan"
+    __table_args__ = (
+        CheckConstraint(
+            "total_amount >= 0",
+            name="ck_orders_total_nonnegative",
+        ),
+        Index("ix_orders_created_at", "created_at"),
+        Index("ix_orders_status", "status"),
+        Index("ix_orders_customer_email", "customer_email"),
     )
 
-    def to_dict(self) -> Dict[str, Any]:
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    customer_email: Mapped[str] = mapped_column(String(120), nullable=False)
+    shipping_address: Mapped[str] = mapped_column(String(255), nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    zip_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    total_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+    status: Mapped[OrderStatus] = mapped_column(
+        SqlEnum(
+            OrderStatus,
+            name="order_status",
+            native_enum=False,
+            create_constraint=True,
+            validate_strings=True,
+            values_callable=lambda statuses: [status.value for status in statuses],
+        ),
+        default=OrderStatus.PROCESSING,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    items: Mapped[list[OrderItem]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
+    )
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "customer_name": self.customer_name,
@@ -118,8 +164,8 @@ class Order(sql_db.Model):
             "shipping_address": self.shipping_address,
             "city": self.city,
             "zip_code": self.zip_code,
-            "total_amount": self.total_amount,
-            "status": self.status,
+            "total_amount": f"{self.total_amount:.2f}",
+            "status": self.status.value,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
             "items": [item.to_dict() for item in self.items],
         }

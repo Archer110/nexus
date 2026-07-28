@@ -1,5 +1,6 @@
 # tests/test_services.py
-from unittest.mock import ANY, MagicMock, patch
+from decimal import Decimal
+from unittest.mock import ANY, MagicMock
 
 import pytest
 from flask import Flask
@@ -60,7 +61,7 @@ def test_create_product_rollback_on_sql_error(mocker, mock_mongo, mock_db):
     mock_mongo.products.delete_one.assert_called_with({"_id": "mongo_id_123"})
 
 
-def test_get_catalog_merges_data(mocker, mock_mongo):
+def test_get_catalog_merges_data(mock_mongo, mock_db):
     """
     Scenario: The 'Hybrid Join'.
     Goal: Verify Mongo docs are merged with SQL inventory.
@@ -78,22 +79,8 @@ def test_get_catalog_merges_data(mocker, mock_mongo):
     fake_inv.product_id = "prod_1"
     fake_inv.stock = 99
 
-    test_app = Flask(__name__)
-    test_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    test_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    test_app.config["PRODUCTS_PER_PAGE"] = 9
-    sql_db.init_app(test_app)
-
-    with test_app.app_context():
-        # 2. Mock SQL Return (Inventory)
-        # Patch after the app context is active so Flask-SQLAlchemy can resolve the descriptor.
-        with patch(
-            "app.services.product_service.Inventory.query"
-        ) as mock_inventory_query:
-            mock_inventory_query.filter.return_value.all.return_value = [fake_inv]
-
-            # 3. Execute
-            products, count = ProductService.get_catalog(page=1, per_page=9)
+    mock_db.scalars.return_value.all.return_value = [fake_inv]
+    products, count = ProductService.get_catalog(page=1, per_page=9)
 
     # 4. Assert
     assert len(products) == 1
@@ -131,18 +118,33 @@ def test_update_product_routes_correctly(mocker, mock_mongo, mock_db):
 # --- ORDER SERVICE TESTS (The "Strict" Logic) ---
 
 
-def test_create_order_happy_path(mocker, mock_db):
+def test_create_order_happy_path(mock_db):
     """
     Scenario: Standard Checkout.
     """
     # 1. Setup
-    cart = [{"product_id": "prod_1", "qty": 2, "price": 100}]
-    customer = {"name": "Alice", "email": "alice@test.com"}
+    cart = [
+        {
+            "product_id": "prod_1",
+            "name": "Test Product",
+            "image": "product.png",
+            "specs": {"color": "Black"},
+            "qty": 2,
+            "price": 100,
+        }
+    ]
+    customer = {
+        "name": "Alice",
+        "email": "alice@test.com",
+        "address": "123 Main St",
+        "city": "Tehran",
+        "zip": "12345",
+    }
 
     # Mock Inventory (Stock = 10)
     mock_inv = MagicMock(stock=10)
-    mock_query = mocker.patch("app.services.order_service.Inventory.query")
-    mock_query.with_for_update.return_value.filter_by.return_value.first.return_value = mock_inv
+    mock_inv.product_id = "prod_1"
+    mock_db.scalars.return_value.all.return_value = [mock_inv]
 
     # 2. Execute
     order = OrderService.create_order(customer, cart)
@@ -150,31 +152,41 @@ def test_create_order_happy_path(mocker, mock_db):
     # 3. Assert
     assert order is not None
     assert mock_inv.stock == 8  # Deducted 2
-    mock_db.add.assert_called()  # Order added
-    mock_db.commit.assert_called()  # Transaction committed
+    assert order.total_amount == Decimal("200.00")
+    assert order.items[0].product_name == "Test Product"
+    assert order.items[0].product_specs == {"color": "Black"}
+    mock_db.add.assert_called()
+    mock_db.commit.assert_called()
 
 
-def test_create_order_out_of_stock(mocker, mock_db):
+def test_create_order_out_of_stock(mock_db):
     """
     Scenario: Race Condition / Insufficient Stock.
     """
     cart = [{"product_id": "prod_1", "qty": 5, "price": 100, "name": "Test Product"}]
+    customer = {
+        "name": "Alice",
+        "email": "alice@test.com",
+        "address": "123 Main St",
+        "city": "Tehran",
+        "zip": "12345",
+    }
 
     # Mock Inventory (Stock = 1) - Too low!
     mock_inv = MagicMock(stock=1)
-    mock_query = mocker.patch("app.services.order_service.Inventory.query")
-    mock_query.with_for_update.return_value.filter_by.return_value.first.return_value = mock_inv
+    mock_inv.product_id = "prod_1"
+    mock_db.scalars.return_value.all.return_value = [mock_inv]
 
     # Execute & Expect Error
     with pytest.raises(ValueError, match="is out of stock"):
-        OrderService.create_order({}, cart)
+        OrderService.create_order(customer, cart)
 
     # Assert Safety
     mock_db.commit.assert_not_called()  # Ensure no partial order saved
     mock_db.rollback.assert_called()  # Ensure transaction rolled back
 
 
-def test_get_order_details_merges_mongo(mocker, mock_mongo):
+def test_get_order_details_uses_purchase_snapshot():
     """
     Scenario: Viewing an Order Receipt (Reverse Hybrid Join).
     Goal: Verify we fetch Product Names from Mongo using IDs from SQL.
@@ -183,12 +195,6 @@ def test_get_order_details_merges_mongo(mocker, mock_mongo):
     test_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     test_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     sql_db.init_app(test_app)
-
-    # 2. Mock Mongo Product Lookup
-    # The service queries Mongo for these IDs
-    mock_mongo.products.find.return_value = [
-        {"_id": "prod_1", "name": "Super Widget", "image": "img.jpg"}
-    ]
 
     with test_app.app_context():
         sql_db.create_all()
@@ -199,13 +205,16 @@ def test_get_order_details_merges_mongo(mocker, mock_mongo):
             shipping_address="123 Main St",
             city="New York",
             zip_code="10001",
-            total_amount=50.0,
+            total_amount=Decimal("50.00"),
         )
         order.items.append(
             OrderItem(
                 product_id_str="prod_1",
+                product_name="Super Widget",
+                product_image="img.jpg",
+                product_specs={"color": "Black"},
                 quantity=1,
-                price_at_purchase=50.0,
+                price_at_purchase=Decimal("50.00"),
             )
         )
         sql_db.session.add(order)
@@ -214,9 +223,8 @@ def test_get_order_details_merges_mongo(mocker, mock_mongo):
         # 3. Execute
         result = OrderService.get_order_with_details(order.id)
 
-    # 4. Assert
-    # The SQL data ("items") should now have Mongo data ("name") attached
     item = result["items"][0]
     assert item["name"] == "Super Widget"
     assert item["image"] == "img.jpg"
+    assert item["specs"] == {"color": "Black"}
     assert result["shipping_address"] == "123 Main St"

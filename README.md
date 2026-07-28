@@ -24,6 +24,7 @@ referenced by `DATABASE_URL` before starting the application.
 ```bash
 make setup
 # Edit .env with valid local database credentials.
+make db-upgrade
 make run
 ```
 
@@ -35,8 +36,11 @@ To reset the databases and seed a synthetic product catalog:
 make seed
 ```
 
-The seed command is destructive: it replaces the product catalog and recreates
-the SQL tables.
+The seed command is destructive: it replaces the product catalog and clears
+the SQL inventory and order ledger. Apply migrations before seeding.
+
+Databases created by the earlier pre-migration version should be recreated once
+before applying the initial migration.
 
 ## Quality checks
 
@@ -46,6 +50,5 @@ make typecheck
 make test
 ```
 
-The Docker environment, production deployment, and authoritative database
-migrations will be added after the application model and behavior are
-stabilized.
+The Docker environment and production deployment will be added after the
+application model and behavior are stabilized.

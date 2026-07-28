@@ -5,7 +5,7 @@ UV = uv
 GREEN = \033[0;32m
 NC = \033[0m
 
-.PHONY: run setup seed format lint typecheck test check clean
+.PHONY: run setup db-migrate db-upgrade seed format lint typecheck test check clean
 
 run:
 	@echo "${GREEN}Starting Server...${NC}"
@@ -18,6 +18,12 @@ setup:
 	$(UV) sync
 	@echo "${GREEN}Creating .env file...${NC}"
 	@if [ ! -f .env ]; then cp .env.example .env 2>/dev/null || touch .env; fi
+
+db-migrate:
+	$(FLASK) --app run.py db migrate -m "$(message)"
+
+db-upgrade:
+	$(FLASK) --app run.py db upgrade
 
 seed:
 	@echo "${GREEN}Resetting and seeding products...${NC}"

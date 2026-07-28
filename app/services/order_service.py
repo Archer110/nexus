@@ -1,125 +1,141 @@
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Any
 
-from bson import ObjectId
-from sqlalchemy import or_
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import selectinload
 
-from app.extensions import mongo, sql_db
-from app.models import Inventory, Order, OrderItem
+from app.extensions import sql_db
+from app.models import (
+    ORDER_STATUS_TRANSITIONS,
+    Inventory,
+    Order,
+    OrderItem,
+    OrderStatus,
+)
+
+CENT = Decimal("0.01")
+
+
+def _money(value: Any) -> Decimal:
+    try:
+        amount = Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError) as error:
+        raise ValueError("Invalid monetary value.") from error
+    if amount < 0:
+        raise ValueError("Monetary values cannot be negative.")
+    return amount
 
 
 class OrderService:
-    """
-    The 'Bank Manager'.
-    Responsibility: Handle strict financial transactions and order lifecycle.
-    """
-
-    STATUS_TRANSITIONS = {
-        "Processing": {"Shipped", "Cancelled"},
-        "Shipped": {"Delivered"},
-        "Delivered": set(),
-        "Cancelled": set(),
-    }
-
-    # --- WRITES (The "Safe" Transaction) ---
+    """Manage transactional inventory and order state."""
 
     @staticmethod
     def create_order(
-        customer_data: Dict[str, Any], cart_items: List[Dict[str, Any]]
-    ) -> Optional[Order]:
-        """
-        Executes the Checkout Transaction.
-        1. Validates Stock (SQL Inventory).
-        2. Deducts Stock.
-        3. Creates Order + OrderItems.
-        4. Commits atomically.
-        """
+        customer_data: dict[str, Any],
+        cart_items: list[dict[str, Any]],
+    ) -> Order | None:
         if not cart_items:
             return None
 
-        # Start a Session Transaction
-        # Note: In Flask-SQLAlchemy, transactions are implicit on commit,
-        # but we use try/except to handle rollbacks explicitly.
+        customer_fields = {
+            "customer_name": customer_data.get("name"),
+            "customer_email": customer_data.get("email"),
+            "shipping_address": customer_data.get("address"),
+            "city": customer_data.get("city"),
+            "zip_code": customer_data.get("zip"),
+        }
+        normalized_customer = {
+            field: str(value).strip() if value is not None else ""
+            for field, value in customer_fields.items()
+        }
+        if any(not value for value in normalized_customer.values()):
+            raise ValueError("All customer and shipping fields are required.")
+
+        product_ids = sorted({str(item["product_id"]) for item in cart_items})
+
         try:
-            total_amount: float = 0.0
-            new_items: List[OrderItem] = []
-
-            # 1. Process Items & Deduct Stock
-            for item in cart_items:
-                qty = int(item["qty"])
-                price = float(item["price"])
-                product_id = str(item["product_id"])
-
-                # STRICT Check: Lock the inventory row for update
-                # (with_for_update ensures no one else buys this last item while we are processing)
-                inventory = (
-                    Inventory.query.with_for_update()
-                    .filter_by(product_id=product_id)
-                    .first()
-                )
-
-                if not inventory or inventory.stock < qty:
-                    raise ValueError(f"Product {item['name']} is out of stock!")
-
-                # Deduct Stock
-                inventory.stock -= qty
-
-                # Create Strict Line Item
-                order_item = OrderItem(
-                    product_id_str=product_id,
-                    quantity=qty,
-                    price_at_purchase=price,  # <--- Freeze the price!
-                )
-                new_items.append(order_item)
-                total_amount += price * qty
-
-            # 2. Create Order Header
-            new_order = Order(
-                customer_name=customer_data.get("name"),
-                customer_email=customer_data.get("email"),
-                shipping_address=customer_data.get("address"),
-                city=customer_data.get("city"),
-                zip_code=customer_data.get("zip"),
-                total_amount=total_amount,
-                status="Processing",
-                created_at=datetime.now(timezone.utc),
-                items=new_items,  # SQLA handles the Foreign Keys automatically
+            inventory_statement = (
+                select(Inventory)
+                .where(Inventory.product_id.in_(product_ids))
+                .order_by(Inventory.product_id)
+                .with_for_update()
             )
+            inventory_records = sql_db.session.scalars(inventory_statement).all()
+            inventory_by_product = {
+                inventory.product_id: inventory for inventory in inventory_records
+            }
 
-            # 3. Commit the Whole Block
-            sql_db.session.add(new_order)
+            total_amount = Decimal("0.00")
+            order_items: list[OrderItem] = []
+
+            for item in cart_items:
+                quantity = int(item["qty"])
+                if quantity <= 0:
+                    raise ValueError("Cart quantities must be positive.")
+
+                product_id = str(item["product_id"])
+                product_name = str(item.get("name") or "Unknown Product")
+                inventory = inventory_by_product.get(product_id)
+                if not inventory or inventory.stock < quantity:
+                    raise ValueError(f"Product {product_name} is out of stock!")
+
+                price = _money(item["price"])
+                inventory.stock -= quantity
+                order_items.append(
+                    OrderItem(
+                        product_id_str=product_id,
+                        product_name=product_name,
+                        product_image=item.get("image"),
+                        product_specs=dict(item.get("specs") or {}),
+                        quantity=quantity,
+                        price_at_purchase=price,
+                    )
+                )
+                total_amount += price * quantity
+
+            order = Order(
+                **normalized_customer,
+                total_amount=total_amount,
+                status=OrderStatus.PROCESSING,
+                items=order_items,
+            )
+            sql_db.session.add(order)
             sql_db.session.commit()
-
-            return new_order
-
-        except Exception as e:
-            # If ANYTHING fails (Out of stock, DB error), we rollback.
-            # No money is lost, no half-orders created.
+            return order
+        except Exception:
             sql_db.session.rollback()
-            raise e
+            raise
 
     @staticmethod
-    def update_status(order_id: int, new_status: str) -> Optional[Order]:
+    def update_status(order_id: int, new_status: str) -> Order | None:
         order = sql_db.session.get(Order, order_id)
         if not order:
             return None
 
-        if new_status == order.status:
+        try:
+            requested_status = OrderStatus(new_status)
+        except ValueError as error:
+            raise ValueError(f"Unknown order status {new_status!r}.") from error
+
+        if requested_status == order.status:
             return order
 
-        allowed_statuses = OrderService.STATUS_TRANSITIONS.get(order.status, set())
-        if new_status not in allowed_statuses:
-            raise ValueError(f"Order cannot move from {order.status} to {new_status}.")
+        if requested_status not in ORDER_STATUS_TRANSITIONS[order.status]:
+            raise ValueError(
+                f"Order cannot move from {order.status.value} "
+                f"to {requested_status.value}."
+            )
 
         try:
-            if new_status == "Cancelled":
+            if requested_status is OrderStatus.CANCELLED:
                 product_ids = sorted(item.product_id_str for item in order.items)
-                inventory_records = (
-                    Inventory.query.filter(Inventory.product_id.in_(product_ids))
+                inventory_statement = (
+                    select(Inventory)
+                    .where(Inventory.product_id.in_(product_ids))
+                    .order_by(Inventory.product_id)
                     .with_for_update()
-                    .all()
                 )
+                inventory_records = sql_db.session.scalars(inventory_statement).all()
                 inventory_by_product = {
                     inventory.product_id: inventory for inventory in inventory_records
                 }
@@ -132,96 +148,52 @@ class OrderService:
                         )
                     inventory.stock += item.quantity
 
-            order.status = new_status
+            order.status = requested_status
             sql_db.session.commit()
             return order
         except Exception:
             sql_db.session.rollback()
             raise
 
-    # --- READS (The "Reverse" Hybrid Join) ---
-
     @staticmethod
-    def _serialize_orders(orders: List[Order]) -> List[Dict[str, Any]]:
-        if not orders:
-            return []
-
-        product_ids = {item.product_id_str for order in orders for item in order.items}
-        object_ids = [
-            ObjectId(product_id)
-            for product_id in product_ids
-            if ObjectId.is_valid(product_id)
-        ]
-        product_documents = list(mongo.db.products.find({"_id": {"$in": object_ids}}))
-        products_by_id = {str(product["_id"]): product for product in product_documents}
-
-        serialized_orders = []
-        for order in orders:
-            order_data = order.to_dict()
-            for item_data in order_data["items"]:
-                product = products_by_id.get(item_data["product_id"])
-                if product:
-                    item_data["name"] = product.get("name", "Unknown Product")
-                    item_data["image"] = product.get("image", "/static/placeholder.png")
-                    item_data["specs"] = product.get("specs", {})
-                else:
-                    item_data["name"] = "Archived Product"
-                    item_data["image"] = "/static/placeholder.png"
-                    item_data["specs"] = {}
-            serialized_orders.append(order_data)
-
-        return serialized_orders
-
-    @staticmethod
-    def get_order_with_details(order_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Fetches the Order (SQL) and enriches items with Product Data (Mongo).
-        Used for the 'Order Success' or 'Order History' page.
-        """
+    def get_order_with_details(
+        order_id: int,
+    ) -> dict[str, Any] | None:
         order = sql_db.session.get(Order, order_id)
-        if not order:
-            return None
-
-        return OrderService._serialize_orders([order])[0]
+        return order.to_dict() if order else None
 
     @staticmethod
-    def get_orders(search_query: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        Standard Admin List Query.
-        """
-        query = Order.query.options(selectinload(Order.items))
+    def get_orders(
+        search_query: str | None = None,
+    ) -> list[dict[str, Any]]:
+        statement = select(Order).options(selectinload(Order.items))
 
         if search_query:
             term = f"%{search_query}%"
-            # Search by ID, Name, or Email
-            query = query.filter(
+            statement = statement.where(
                 or_(
                     Order.customer_name.ilike(term),
                     Order.customer_email.ilike(term),
-                    Order.id.cast(sql_db.String).ilike(term),
+                    cast(Order.id, String).ilike(term),
                 )
             )
 
-        orders = query.order_by(Order.created_at.desc()).all()
-        return OrderService._serialize_orders(orders)
-
-    # --- ATOMIC STATS (For Dashboard) ---
+        statement = statement.order_by(Order.created_at.desc())
+        orders = sql_db.session.scalars(statement).all()
+        return [order.to_dict() for order in orders]
 
     @staticmethod
-    def get_total_revenue() -> float:
-        """Returns revenue from all non-cancelled orders."""
-        return (
-            sql_db.session.query(sql_db.func.sum(Order.total_amount))
-            .filter(Order.status != "Cancelled")
-            .scalar()
-            or 0.0
+    def get_total_revenue() -> Decimal:
+        statement = select(func.sum(Order.total_amount)).where(
+            Order.status != OrderStatus.CANCELLED
         )
+        return sql_db.session.scalar(statement) or Decimal("0.00")
 
     @staticmethod
-    def get_recent_orders(limit: Optional[int] = 5) -> List[Order]:
-        """Returns the N most recent orders."""
-        return Order.query.order_by(Order.created_at.desc()).limit(limit).all()
+    def get_recent_orders(limit: int = 5) -> list[Order]:
+        statement = select(Order).order_by(Order.created_at.desc()).limit(limit)
+        return list(sql_db.session.scalars(statement))
 
     @staticmethod
     def count_orders() -> int:
-        return Order.query.count()
+        return sql_db.session.scalar(select(func.count(Order.id))) or 0

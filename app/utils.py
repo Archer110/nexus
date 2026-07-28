@@ -1,3 +1,5 @@
+from typing import Any
+
 from flask import request, url_for
 
 
@@ -7,7 +9,7 @@ def toggle_url(key: str, value: str) -> str:
     (adds it if missing, removes it if present).
     Used for the multi-select checkboxes.
     """
-    args = request.args.to_dict(flat=False)  # Get mutable dict of lists
+    args: dict[str, Any] = request.args.to_dict(flat=False)
 
     # Always reset to page 1 when filtering
     if "page" in args:
@@ -24,4 +26,8 @@ def toggle_url(key: str, value: str) -> str:
         current_vals.append(str_val)  # Check
         args[key] = current_vals
 
-    return url_for(request.endpoint, **args)
+    endpoint = request.endpoint
+    if endpoint is None:
+        raise RuntimeError("Cannot build a filter URL without an endpoint.")
+
+    return url_for(endpoint, **args)
