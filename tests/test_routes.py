@@ -1,40 +1,4 @@
-# tests/test_routes.py
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
-
-from app.money import cart_total, format_money
-
-
-# --- FIXTURES ---
-@pytest.fixture
-def client(mock_app_context):
-    """
-    Creates a Flask test client using the mocked app context.
-    """
-    # Create a fresh Flask app for routing tests
-    from flask import Flask
-
-    # We need to import the real blueprints to register them
-    from app.routes.admin import admin_bp
-    from app.routes.cart import cart_bp
-    from app.routes.store import store_bp
-
-    template_dir = Path(__file__).resolve().parents[1] / "app" / "templates"
-    app = Flask(__name__, template_folder=str(template_dir))
-    app.config["SECRET_KEY"] = "testing_key"
-    app.config["TESTING"] = True
-    app.add_template_filter(format_money, "money")
-    app.add_template_filter(cart_total, "cart_total")
-
-    # Register Blueprints
-    app.register_blueprint(store_bp)
-    app.register_blueprint(cart_bp)
-    app.register_blueprint(admin_bp)
-
-    return app.test_client()
-
 
 # --- STORE ROUTE TESTS ---
 

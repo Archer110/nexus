@@ -615,50 +615,52 @@ name = "nexus"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "faker" },
     { name = "flask" },
     { name = "flask-migrate" },
     { name = "flask-pymongo" },
     { name = "flask-session", extra = ["redis"] },
     { name = "flask-sqlalchemy" },
-    { name = "mypy" },
     { name = "psycopg2-binary" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
     { name = "python-dotenv" },
-    { name = "requests" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "fakeredis" },
+    { name = "mypy" },
     { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
     { name = "ruff" },
+]
+seed = [
+    { name = "faker" },
+    { name = "requests" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "faker", specifier = ">=40.1.2" },
     { name = "flask", specifier = ">=3.1.2" },
     { name = "flask-migrate", specifier = ">=4.1.0" },
     { name = "flask-pymongo", specifier = ">=3.0.1" },
     { name = "flask-session", extras = ["redis"], specifier = ">=0.8.0" },
     { name = "flask-sqlalchemy", specifier = ">=3.1.1" },
-    { name = "mypy", specifier = ">=1.19.1" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "pytest-mock", specifier = ">=3.15.1" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "requests", specifier = ">=2.32.5" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "fakeredis", specifier = ">=2.37.0" },
+    { name = "mypy", specifier = ">=1.19.1" },
     { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+    { name = "pytest-mock", specifier = ">=3.15.1" },
     { name = "ruff", specifier = ">=0.15.0" },
+]
+seed = [
+    { name = "faker", specifier = ">=40.1.2" },
+    { name = "requests", specifier = ">=2.32.5" },
 ]
 
 [[package]]

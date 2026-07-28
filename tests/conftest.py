@@ -1,34 +1,55 @@
-# tests/conftest.py
-import os
-import sys
-from unittest.mock import MagicMock
+from collections.abc import Callable
+from typing import Any
 
+import fakeredis
 import pytest
+from flask import Flask
 
-# Add the project root to python path so we can import 'app'
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from app import create_app
+from app.extensions import sql_db
+from config import TestingConfig
 
 
 @pytest.fixture
-def mock_app_context(mocker):
-    """
-    Mocks the Flask 'current_app' and application context.
-    """
-    mock_app = MagicMock()
-    mock_app.config = {"PRODUCTS_PER_PAGE": 9, "ADMIN_PER_PAGE": 10}
+def app_factory() -> Callable[..., Flask]:
+    """Build test applications through the production application factory."""
 
-    # Patch 'current_app' in the services modules
-    mocker.patch("app.services.product_service.current_app", mock_app)
-    return mock_app
+    def factory(**overrides: Any) -> Flask:
+        config_values = {
+            "SESSION_REDIS": fakeredis.FakeRedis(),
+            **overrides,
+        }
+        config_class = type(
+            "ConfiguredTestConfig",
+            (TestingConfig,),
+            config_values,
+        )
+        return create_app(config_class)
+
+    return factory
+
+
+@pytest.fixture
+def app(app_factory):
+    application = app_factory()
+    yield application
+
+    with application.app_context():
+        sql_db.session.remove()
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
 
 
 @pytest.fixture
 def mock_db(mocker):
-    """Mocks the SQLAlchemy database session."""
+    """Mock the SQLAlchemy session for focused service tests."""
     return mocker.patch("app.extensions.sql_db.session")
 
 
 @pytest.fixture
 def mock_mongo(mocker):
-    """Mocks the PyMongo database object."""
+    """Mock the Mongo database handle for focused service tests."""
     return mocker.patch("app.extensions.mongo.db")

@@ -4,32 +4,12 @@ import fakeredis
 from flask import jsonify, session
 from flask_session.redis import RedisSessionInterface
 
-from app import create_app
 
-
-def _session_app(redis_client):
-    class SessionTestConfig:
-        SECRET_KEY = "session-test-secret"
-        MONGO_URI = "mongodb://localhost:27017/nexus_test"
-        SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
-        SQLALCHEMY_TRACK_MODIFICATIONS = False
-        REDIS_URL = "redis://unused:6379/0"
-        SESSION_TYPE = "redis"
-        SESSION_REDIS = redis_client
-        SESSION_KEY_PREFIX = "nexus:test:session:"
-        SESSION_PERMANENT = True
-        PERMANENT_SESSION_LIFETIME = timedelta(hours=1)
-        SESSION_REFRESH_EACH_REQUEST = True
-        SESSION_SERIALIZATION_FORMAT = "msgpack"
-        SESSION_COOKIE_HTTPONLY = True
-        SESSION_COOKIE_SAMESITE = "Lax"
-        SESSION_COOKIE_SECURE = False
-        PRODUCTS_PER_PAGE = 9
-        ADMIN_PER_PAGE = 20
-        ALLOW_DB_CLEAN = False
-
-    app = create_app(SessionTestConfig)
-    app.config["TESTING"] = True
+def _session_app(app_factory, redis_client):
+    app = app_factory(
+        SESSION_REDIS=redis_client,
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=1),
+    )
 
     @app.post("/test-session")
     def set_test_session():
@@ -54,9 +34,9 @@ def _session_app(redis_client):
     return app
 
 
-def test_session_cart_is_stored_in_redis_with_expiry():
+def test_session_cart_is_stored_in_redis_with_expiry(app_factory):
     redis_client = fakeredis.FakeRedis()
-    app = _session_app(redis_client)
+    app = _session_app(app_factory, redis_client)
     client = app.test_client()
 
     response = client.post("/test-session")
@@ -84,9 +64,9 @@ def test_session_cart_is_stored_in_redis_with_expiry():
     assert "Redis session storage is available." in result.output
 
 
-def test_session_cookie_security_attributes_and_server_side_cleanup():
+def test_session_cookie_security_attributes_and_server_side_cleanup(app_factory):
     redis_client = fakeredis.FakeRedis()
-    app = _session_app(redis_client)
+    app = _session_app(app_factory, redis_client)
     client = app.test_client()
 
     response = client.post("/test-session")

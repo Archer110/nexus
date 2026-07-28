@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import selectinload
 
+from app.contracts import CartItem, CheckoutCustomer
 from app.extensions import sql_db
 from app.models import (
     ORDER_STATUS_TRANSITIONS,
@@ -21,8 +22,8 @@ class OrderService:
 
     @staticmethod
     def create_order(
-        customer_data: dict[str, Any],
-        cart_items: list[dict[str, Any]],
+        customer_data: CheckoutCustomer,
+        cart_items: list[CartItem],
     ) -> Order | None:
         if not cart_items:
             return None

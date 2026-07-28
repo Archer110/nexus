@@ -1,8 +1,9 @@
 from decimal import Decimal
-from typing import Any
+from typing import cast
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
+from app.contracts import CartItem, CartViewItem, CheckoutCustomer
 from app.money import money, money_value
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
@@ -10,14 +11,17 @@ from app.services.product_service import ProductService
 cart_bp = Blueprint("cart", __name__, url_prefix="/cart")
 
 
-def _cart_context() -> tuple[list[dict[str, Any]], Decimal]:
-    cart: list[dict[str, Any]] = []
+def _session_cart() -> list[CartItem]:
+    return cast(list[CartItem], session.get("cart", []))
+
+
+def _cart_context() -> tuple[list[CartViewItem], Decimal]:
+    cart: list[CartViewItem] = []
     total = Decimal("0.00")
 
-    for session_item in session.get("cart", []):
-        item = dict(session_item)
-        item["price"] = money(item["price"])
-        item["subtotal"] = item["price"] * int(item["qty"])
+    for session_item in _session_cart():
+        item = cast(CartViewItem, dict(session_item))
+        item["subtotal"] = money(item["price"]) * item["qty"]
         total += item["subtotal"]
         cart.append(item)
 
@@ -25,7 +29,7 @@ def _cart_context() -> tuple[list[dict[str, Any]], Decimal]:
 
 
 def _refresh_cart_from_catalog() -> None:
-    cart = session.get("cart", [])
+    cart = _session_cart()
     product_ids = [str(item["product_id"]) for item in cart]
     products = ProductService.get_products_by_ids(product_ids)
 
@@ -103,7 +107,7 @@ def add_to_cart(product_id):
     if available_stock < 1:
         return _render_cart_error(f"{product['name']} is out of stock.")
 
-    cart = session["cart"]
+    cart = _session_cart()
     product_price = money_value(product["price"])
     found = False
 
@@ -130,14 +134,14 @@ def add_to_cart(product_id):
     if not found:
         # Redis owns this session snapshot; checkout still refreshes it from MongoDB.
         cart.append(
-            {
-                "product_id": str(product["_id"]),
-                "name": product["name"],
-                "price": product_price,
-                "image": product["image"],
-                "specs": product.get("specs", {}),
-                "qty": 1,
-            }
+            CartItem(
+                product_id=str(product["_id"]),
+                name=product["name"],
+                price=product_price,
+                image=product["image"],
+                specs=product.get("specs", {}),
+                qty=1,
+            )
         )
 
     session.modified = True
@@ -158,7 +162,7 @@ def update_quantity(product_id, action):
     if action not in {"increase", "decrease"}:
         return _render_cart_error("Invalid cart action.")
 
-    cart = session.get("cart", [])
+    cart = _session_cart()
 
     for item in cart:
         if item["product_id"] == product_id:
@@ -226,19 +230,19 @@ def checkout():
     The Final Commit.
     Passes the session cart to the OrderService for the ACID transaction.
     """
-    cart = session.get("cart", [])
+    cart = _session_cart()
     if not cart:
         flash("Cart is empty", "error")
         return redirect(url_for("store.index"))
 
     # 1. Parse Form Data
-    customer_data = {
-        "name": request.form.get("name"),
-        "email": request.form.get("email"),
-        "address": request.form.get("address"),
-        "city": request.form.get("city"),
-        "zip": request.form.get("zip"),
-    }
+    customer_data = CheckoutCustomer(
+        name=request.form.get("name"),
+        email=request.form.get("email"),
+        address=request.form.get("address"),
+        city=request.form.get("city"),
+        zip=request.form.get("zip"),
+    )
 
     # 2. Call Service (The "Atomic" Operation)
     try:

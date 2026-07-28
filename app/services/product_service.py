@@ -1,11 +1,12 @@
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from bson import ObjectId
 from flask import current_app
 from sqlalchemy import select
 
+from app.contracts import CatalogProduct
 from app.extensions import get_mongo_db, sql_db
 from app.models import Inventory
 from app.money import bson_money, money_value
@@ -17,11 +18,16 @@ class ProductService:
     CATALOG_EDITABLE_FIELDS = {"name", "category", "description", "image"}
 
     @staticmethod
-    def _normalize_product(product: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_product(product: dict[str, Any]) -> CatalogProduct:
         normalized = dict(product)
         normalized["_id"] = str(product["_id"])
+        normalized["name"] = str(product.get("name") or "Unknown Product")
         normalized["price"] = money_value(product["price"])
-        return normalized
+        normalized["image"] = str(
+            product.get("image") or "https://placehold.co/600x400"
+        )
+        normalized["specs"] = dict(product.get("specs") or {})
+        return cast(CatalogProduct, normalized)
 
     @staticmethod
     def _inventory_by_product(product_ids: list[str]) -> dict[str, Inventory]:
@@ -36,7 +42,7 @@ class ProductService:
     def create_product(
         data: dict[str, Any],
         stock: int | str,
-    ) -> dict[str, Any]:
+    ) -> CatalogProduct:
         stock_value = int(stock)
         price = bson_money(data.get("price", 0))
         if stock_value < 0:
@@ -64,12 +70,15 @@ class ProductService:
             products.delete_one({"_id": result.inserted_id})
             raise
 
-        return {
-            **product_document,
-            "_id": product_id,
-            "price": money_value(price),
-            "stock": stock_value,
-        }
+        return cast(
+            CatalogProduct,
+            {
+                **product_document,
+                "_id": product_id,
+                "price": money_value(price),
+                "stock": stock_value,
+            },
+        )
 
     @staticmethod
     def update_product(
@@ -132,7 +141,7 @@ class ProductService:
         search_query: str | None = None,
         category: str | None = None,
         spec_filters: dict[str, list[str]] | None = None,
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> tuple[list[CatalogProduct], int]:
         if per_page is None:
             per_page = int(current_app.config.get("PRODUCTS_PER_PAGE", 9))
 
@@ -159,22 +168,23 @@ class ProductService:
         inventory = ProductService._inventory_by_product(
             [str(product["_id"]) for product in products]
         )
-        for index, product in enumerate(products):
+        normalized_products: list[CatalogProduct] = []
+        for product in products:
             normalized = ProductService._normalize_product(product)
             product_id = normalized["_id"]
             normalized["stock"] = (
                 inventory[product_id].stock if product_id in inventory else 0
             )
-            products[index] = normalized
+            normalized_products.append(normalized)
 
-        return products, total_count
+        return normalized_products, total_count
 
     @staticmethod
     def get_admin_catalog(
         page: int = 1,
         per_page: int | None = 9,
         search_query: str | None = "",
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> tuple[list[CatalogProduct], int]:
         if per_page is None:
             per_page = int(current_app.config.get("ADMIN_PER_PAGE", 20))
 
@@ -206,28 +216,31 @@ class ProductService:
         inventory = ProductService._inventory_by_product(
             [str(product["_id"]) for product in products]
         )
-        for index, product in enumerate(products):
+        normalized_products: list[CatalogProduct] = []
+        for product in products:
             normalized = ProductService._normalize_product(product)
             product_id = normalized["_id"]
             normalized["stock"] = (
                 inventory[product_id].stock if product_id in inventory else 0
             )
-            products[index] = normalized
+            normalized_products.append(normalized)
 
-        return products, total_count
+        return normalized_products, total_count
 
     @staticmethod
     def get_product_details(
         product_id: str,
-    ) -> dict[str, Any] | None:
+    ) -> CatalogProduct | None:
         if not ObjectId.is_valid(product_id):
             return None
 
-        product = get_mongo_db().products.find_one({"_id": ObjectId(product_id)})
-        if not product:
+        product_document = get_mongo_db().products.find_one(
+            {"_id": ObjectId(product_id)}
+        )
+        if not product_document:
             return None
 
-        product = ProductService._normalize_product(product)
+        product = ProductService._normalize_product(product_document)
         product_id = product["_id"]
         inventory = sql_db.session.get(Inventory, product_id)
         product["stock"] = inventory.stock if inventory else 0
@@ -236,7 +249,7 @@ class ProductService:
     @staticmethod
     def get_products_by_ids(
         product_ids: list[str],
-    ) -> dict[str, dict[str, Any]]:
+    ) -> dict[str, CatalogProduct]:
         """Fetch authoritative catalog snapshots for cart reconciliation."""
         object_ids = [
             ObjectId(product_id)

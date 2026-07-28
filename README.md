@@ -32,6 +32,9 @@ make db-upgrade
 make run
 ```
 
+`uv sync` installs the development and seed dependency groups by default. A
+runtime-only environment can use `uv sync --no-default-groups`.
+
 The development server is available at <http://localhost:5000>.
 
 Cart and login state are stored in Redis under the `nexus:session:` key prefix.

@@ -5,12 +5,13 @@ from redis.exceptions import BusyLoadingError, ConnectionError, TimeoutError
 from redis.retry import Retry
 
 from app.extensions import migrate, mongo, server_session, sql_db
-from config import Config
+from config import BaseConfig, Config, validate_config
 
 
-def create_app(config_class=Config):
+def create_app(config_class: type[BaseConfig] = Config) -> Flask:
     app = Flask(__name__)
     app.config.from_object(config_class)
+    validate_config(app.config)
 
     # 1. Initialize Extensions
     mongo.init_app(app)

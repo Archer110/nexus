@@ -96,6 +96,8 @@ def test_get_catalog_merges_data(mock_mongo, mock_db):
     assert products[0]["stock"] == 99  # <--- The Merge happened!
     assert products[0]["_id"] == "prod_1"
     assert products[0]["price"] == "1499.90"
+    assert products[0]["image"] == "https://placehold.co/600x400"
+    assert products[0]["specs"] == {}
 
 
 def test_get_products_by_ids_normalizes_current_and_legacy_prices(mock_mongo):
