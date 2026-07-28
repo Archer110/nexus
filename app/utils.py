@@ -1,7 +1,7 @@
 from flask import request, url_for
 
 
-def toggle_url(key, value):
+def toggle_url(key: str, value: str) -> str:
     """
     Generates a URL that toggles a specific query parameter
     (adds it if missing, removes it if present).
