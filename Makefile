@@ -5,7 +5,7 @@ UV = uv
 GREEN = \033[0;32m
 NC = \033[0m
 
-.PHONY: run setup redis-check db-clean db-reset db-migrate db-upgrade seed format lint typecheck test check clean
+.PHONY: run setup admin-hash redis-check db-clean db-reset db-migrate db-upgrade seed format lint typecheck test check clean
 
 run:
 	@echo "${GREEN}Starting Server...${NC}"
@@ -21,6 +21,9 @@ setup:
 	$(UV) sync
 	@echo "${GREEN}Creating .env file...${NC}"
 	@if [ ! -f .env ]; then cp .env.example .env 2>/dev/null || touch .env; fi
+
+admin-hash:
+	@$(PYTHON) scripts/generate_admin_hash.py
 
 db-migrate:
 	$(FLASK) --app run.py db migrate -m "$(message)"

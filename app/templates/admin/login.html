@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>System Access</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -24,6 +25,7 @@
         {% endif %}
 
         <form method="POST" class="space-y-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div>
                 <input type="text" name="username" placeholder="Username" class="w-full bg-slate-950 border border-slate-800 text-white rounded-lg px-4 py-3 focus:border-cyan-500 focus:outline-none transition">
             </div>

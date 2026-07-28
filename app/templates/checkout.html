@@ -21,6 +21,7 @@
             {% endif %}
 
             <form action="{{ url_for('cart.checkout') }}" method="POST" class="space-y-6">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 
                 <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
                     <h2 class="text-xl font-semibold mb-4 text-white">Contact Info</h2>

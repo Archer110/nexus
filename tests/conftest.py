@@ -8,6 +8,7 @@ from flask import Flask
 from app import create_app
 from app.extensions import sql_db
 from config import TestingConfig
+from tests.helpers import get_csrf_token
 
 
 @pytest.fixture
@@ -41,6 +42,16 @@ def app(app_factory):
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture
+def csrf_token(client):
+    return get_csrf_token(client)
+
+
+@pytest.fixture
+def csrf_headers(csrf_token):
+    return {"X-CSRFToken": csrf_token}
 
 
 @pytest.fixture

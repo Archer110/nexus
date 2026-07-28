@@ -1,5 +1,6 @@
 import json
 from functools import wraps
+from secrets import compare_digest
 
 from flask import (
     Blueprint,
@@ -11,6 +12,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.security import check_password_hash
 
 # THE CRITICAL CHANGE:
 # We import Services, NOT Models or Database extensions.
@@ -19,6 +21,13 @@ from app.services.product_service import ProductService
 from app.validation import page_number, search_term
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+def _regenerate_session_id() -> None:
+    regenerate = getattr(current_app.session_interface, "regenerate", None)
+    if not callable(regenerate):
+        raise RuntimeError("The configured session backend cannot rotate session IDs.")
+    regenerate(session)
 
 
 def _admin_products_url_with_page(page):
@@ -43,19 +52,25 @@ def admin_required(f):
 def admin_login():
     error = None
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        if username == "admin" and password == "secret":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        configured_username = current_app.config["ADMIN_USERNAME"]
+        configured_password_hash = current_app.config["ADMIN_PASSWORD_HASH"]
+        username_matches = compare_digest(username, configured_username)
+        password_matches = check_password_hash(configured_password_hash, password)
+
+        if username_matches and password_matches:
+            _regenerate_session_id()
             session["admin_logged_in"] = True
             return redirect(url_for("admin.dashboard"))
-        else:
-            error = "Invalid credentials"
+        error = "Invalid credentials"
     return render_template("admin/login.html", error=error)
 
 
-@admin_bp.route("/logout")
+@admin_bp.route("/logout", methods=["POST"])
 def admin_logout():
     session.pop("admin_logged_in", None)
+    _regenerate_session_id()
     return redirect(url_for("admin.admin_login"))
 
 

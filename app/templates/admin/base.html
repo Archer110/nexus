@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>NEXUS | Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script defer src="{{ url_for('static', filename='js/csrf.js') }}"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -35,9 +37,12 @@
             <a href="{{ url_for('store.index') }}" class="flex items-center gap-2 text-xs text-slate-500 hover:text-white transition px-4 py-2">
                 ← Back to Store
             </a>
-            <a href="{{ url_for('admin.admin_logout') }}" class="flex items-center gap-2 text-xs text-red-500 hover:text-red-400 transition px-4 py-2">
-                Log Out
-            </a>
+            <form action="{{ url_for('admin.admin_logout') }}" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="w-full text-left flex items-center gap-2 text-xs text-red-500 hover:text-red-400 transition px-4 py-2">
+                    Log Out
+                </button>
+            </form>
         </div>
     </aside>
 

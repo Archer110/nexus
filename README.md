@@ -27,7 +27,9 @@ with `make redis-check`.
 
 ```bash
 make setup
-# Edit .env with valid local database credentials.
+# Generate an admin password hash, then copy it into .env.
+make admin-hash
+# Edit .env with the hash and valid local database credentials.
 make db-upgrade
 make run
 ```
@@ -42,6 +44,10 @@ The browser receives only an opaque session identifier. Sessions expire after
 24 hours by default and refresh their expiration while active; configure this
 with `SESSION_TTL_HOURS`. Set `SESSION_COOKIE_SECURE=1` whenever the application
 is served over HTTPS.
+
+The admin password is never stored in plaintext. `ADMIN_PASSWORD_HASH` must
+contain the output of `make admin-hash`; the application fails at startup when
+the admin username or password hash is missing.
 
 To reset the databases and seed a synthetic product catalog:
 

@@ -4,6 +4,8 @@ import fakeredis
 from flask import jsonify, session
 from flask_session.redis import RedisSessionInterface
 
+from tests.helpers import get_csrf_token
+
 
 def _session_app(app_factory, redis_client):
     app = app_factory(
@@ -38,8 +40,12 @@ def test_session_cart_is_stored_in_redis_with_expiry(app_factory):
     redis_client = fakeredis.FakeRedis()
     app = _session_app(app_factory, redis_client)
     client = app.test_client()
+    csrf_token = get_csrf_token(client)
 
-    response = client.post("/test-session")
+    response = client.post(
+        "/test-session",
+        headers={"X-CSRFToken": csrf_token},
+    )
 
     assert response.status_code == 204
     assert isinstance(app.session_interface, RedisSessionInterface)
@@ -68,8 +74,12 @@ def test_session_cookie_security_attributes_and_server_side_cleanup(app_factory)
     redis_client = fakeredis.FakeRedis()
     app = _session_app(app_factory, redis_client)
     client = app.test_client()
+    csrf_token = get_csrf_token(client)
 
-    response = client.post("/test-session")
+    response = client.post(
+        "/test-session",
+        headers={"X-CSRFToken": csrf_token},
+    )
 
     cookie_header = response.headers["Set-Cookie"]
     assert "HttpOnly" in cookie_header
@@ -77,7 +87,10 @@ def test_session_cookie_security_attributes_and_server_side_cleanup(app_factory)
     assert "Expires=" in cookie_header
     assert list(redis_client.scan_iter(match="nexus:test:session:*"))
 
-    response = client.delete("/test-session")
+    response = client.delete(
+        "/test-session",
+        headers={"X-CSRFToken": csrf_token},
+    )
 
     assert response.status_code == 204
     assert list(redis_client.scan_iter(match="nexus:test:session:*")) == []

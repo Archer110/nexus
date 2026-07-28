@@ -4,7 +4,7 @@ from redis.backoff import ExponentialBackoff
 from redis.exceptions import BusyLoadingError, ConnectionError, TimeoutError
 from redis.retry import Retry
 
-from app.extensions import migrate, mongo, server_session, sql_db
+from app.extensions import csrf, migrate, mongo, server_session, sql_db
 from config import BaseConfig, Config, validate_config
 
 
@@ -27,6 +27,7 @@ def create_app(config_class: type[BaseConfig] = Config) -> Flask:
             health_check_interval=30,
         )
     server_session.init_app(app)
+    csrf.init_app(app)
 
     # 2. Register CLI Commands
     from app.commands import register_commands

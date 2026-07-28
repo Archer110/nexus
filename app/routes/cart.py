@@ -1,7 +1,16 @@
 from decimal import Decimal
 from typing import cast
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 from app.contracts import CartItem, CartViewItem, CheckoutCustomer
 from app.money import money, money_value
@@ -95,18 +104,37 @@ def _render_cart_error(message):
     target = request.headers.get("HX-Target")
     if target == "checkout-summary":
         cart, total = _cart_context()
-        return render_template(
-            "partials/checkout_summary.html",
+        response = make_response(
+            render_template(
+                "partials/checkout_summary.html",
+                items=cart,
+                total=total,
+                oob=True,
+                cart_error=message,
+            ),
+            400,
+        )
+        response.headers["X-Nexus-Swap-Error"] = "true"
+        return response
+    if request.headers.get("HX-Request"):
+        response = make_response(_render_cart_drawer(error=message), 400)
+        response.headers["X-Nexus-Swap-Error"] = "true"
+        return response
+
+    return message, 400
+
+
+def _render_checkout_error(message: str, status_code: int):
+    cart, total = _cart_context()
+    return (
+        render_template(
+            "checkout.html",
             items=cart,
             total=total,
-            oob=True,
-            cart_error=message,
-        )
-    if request.headers.get("HX-Request"):
-        return _render_cart_drawer(error=message)
-
-    flash(message, "error")
-    return _store_redirect()
+            errors=[message],
+        ),
+        status_code,
+    )
 
 
 @cart_bp.route("/add/<product_id>", methods=["POST"])
@@ -216,7 +244,7 @@ def update_quantity(product_id, action):
     return _store_redirect()
 
 
-@cart_bp.route("/remove/<product_id>", methods=["DELETE", "GET"])
+@cart_bp.route("/remove/<product_id>", methods=["DELETE"])
 def remove_from_cart(product_id):
     if "cart" in session:
         session["cart"] = [
@@ -253,8 +281,7 @@ def checkout():
     """
     cart = _session_cart()
     if not cart:
-        flash("Cart is empty", "error")
-        return redirect(url_for("store.index"))
+        return _render_checkout_error("Cart is empty.", 400)
 
     # 1. Parse Form Data
     customer_data = CheckoutCustomer(
@@ -273,12 +300,12 @@ def checkout():
         session.pop("cart", None)
         return render_template("success.html", order=new_order)
 
-    except ValueError as e:
-        # Catch "Out of Stock" or Logic Errors
-        flash(str(e), "error")
-        return redirect(url_for("cart.checkout_page"))
+    except ValueError as error:
+        return _render_checkout_error(str(error), 400)
 
     except Exception:
-        # Catch unexpected DB errors
-        flash("An error occurred processing your order. Please try again.", "error")
-        return redirect(url_for("cart.checkout_page"))
+        current_app.logger.exception("Unexpected checkout failure.")
+        return _render_checkout_error(
+            "An error occurred processing your order. Please try again.",
+            500,
+        )

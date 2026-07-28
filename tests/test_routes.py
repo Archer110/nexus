@@ -69,7 +69,7 @@ def test_store_normalizes_pagination_and_rejects_unsafe_filter_keys(
 
 
 @patch("app.routes.cart.ProductService")
-def test_add_to_cart_updates_session(mock_service, client):
+def test_add_to_cart_updates_session(mock_service, client, csrf_headers):
     """
     Scenario: POST /cart/add/123
     Goal: Verify item is added to the Session (Cookie).
@@ -84,7 +84,7 @@ def test_add_to_cart_updates_session(mock_service, client):
     }
 
     # 2. Execute
-    response = client.post("/cart/add/123")
+    response = client.post("/cart/add/123", headers=csrf_headers)
 
     # 3. Assert Session Data
     with client.session_transaction() as sess:
@@ -97,7 +97,9 @@ def test_add_to_cart_updates_session(mock_service, client):
 
 
 @patch("app.routes.cart.ProductService")
-def test_add_to_cart_does_not_follow_an_external_referrer(mock_service, client):
+def test_add_to_cart_does_not_follow_an_external_referrer(
+    mock_service, client, csrf_headers
+):
     mock_service.get_product_details.return_value = {
         "_id": "123",
         "name": "Test Item",
@@ -108,23 +110,29 @@ def test_add_to_cart_does_not_follow_an_external_referrer(mock_service, client):
 
     response = client.post(
         "/cart/add/123",
-        headers={"Referer": "https://attacker.example/redirect"},
+        headers={
+            **csrf_headers,
+            "Referer": "https://attacker.example/redirect",
+        },
     )
 
     assert response.status_code == 302
     assert response.location == "/"
 
 
-def test_checkout_requires_cart(client):
+def test_checkout_requires_cart(client, csrf_headers):
     """
     Scenario: POST /cart/checkout with empty cart.
-    Goal: Verify redirect back to store.
+    Goal: Verify a consistent validation response.
     """
-    response = client.post("/cart/checkout", data={"name": "Test"})
+    response = client.post(
+        "/cart/checkout",
+        data={"name": "Test"},
+        headers=csrf_headers,
+    )
 
-    assert response.status_code == 302
-    # Should redirect to index (Store)
-    assert "/" in response.location
+    assert response.status_code == 400
+    assert b"Cart is empty." in response.data
 
 
 def test_checkout_recovers_from_a_malformed_server_side_cart(client):
@@ -241,7 +249,9 @@ def test_checkout_drops_products_missing_from_the_catalog(mock_service, client):
 
 
 @patch("app.routes.cart.ProductService")
-def test_checkout_quantity_update_renders_summary_fragment(mock_service, client):
+def test_checkout_quantity_update_renders_summary_fragment(
+    mock_service, client, csrf_headers
+):
     """
     Scenario: User changes quantity from the checkout page.
     Goal: Verify HTMX updates the summary instead of redirecting/reloading.
@@ -267,7 +277,11 @@ def test_checkout_quantity_update_renders_summary_fragment(mock_service, client)
 
     response = client.post(
         "/cart/update/123/increase",
-        headers={"HX-Request": "true", "HX-Target": "checkout-summary"},
+        headers={
+            **csrf_headers,
+            "HX-Request": "true",
+            "HX-Target": "checkout-summary",
+        },
     )
 
     assert response.status_code == 200
@@ -279,7 +293,7 @@ def test_checkout_quantity_update_renders_summary_fragment(mock_service, client)
 
 
 @patch("app.routes.cart.ProductService")
-def test_cart_drawer_subtotal_includes_quantity(mock_service, client):
+def test_cart_drawer_subtotal_includes_quantity(mock_service, client, csrf_headers):
     mock_service.get_product_details.return_value = {
         "_id": "123",
         "name": "Test Item",
@@ -288,10 +302,14 @@ def test_cart_drawer_subtotal_includes_quantity(mock_service, client):
         "stock": 5,
     }
 
-    client.post("/cart/add/123")
+    client.post("/cart/add/123", headers=csrf_headers)
     response = client.post(
         "/cart/add/123",
-        headers={"HX-Request": "true", "HX-Target": "cart-drawer-content"},
+        headers={
+            **csrf_headers,
+            "HX-Request": "true",
+            "HX-Target": "cart-drawer-content",
+        },
     )
 
     assert response.status_code == 200
@@ -299,7 +317,7 @@ def test_cart_drawer_subtotal_includes_quantity(mock_service, client):
 
 
 @patch("app.routes.cart.ProductService")
-def test_cart_cannot_exceed_available_stock(mock_service, client):
+def test_cart_cannot_exceed_available_stock(mock_service, client, csrf_headers):
     mock_service.get_product_details.return_value = {
         "_id": "123",
         "name": "Last Item",
@@ -308,20 +326,25 @@ def test_cart_cannot_exceed_available_stock(mock_service, client):
         "stock": 1,
     }
 
-    client.post("/cart/add/123")
+    client.post("/cart/add/123", headers=csrf_headers)
     response = client.post(
         "/cart/add/123",
-        headers={"HX-Request": "true", "HX-Target": "cart-drawer-content"},
+        headers={
+            **csrf_headers,
+            "HX-Request": "true",
+            "HX-Target": "cart-drawer-content",
+        },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 400
+    assert response.headers["X-Nexus-Swap-Error"] == "true"
     assert b"Only 1 unit(s) of Last Item are available." in response.data
 
     with client.session_transaction() as sess:
         assert sess["cart"][0]["qty"] == 1
 
 
-def test_checkout_remove_renders_summary_fragment(client):
+def test_checkout_remove_renders_summary_fragment(client, csrf_headers):
     """
     Scenario: User removes an item from the checkout page.
     Goal: Verify they stay on checkout and receive an empty summary fragment.
@@ -339,7 +362,11 @@ def test_checkout_remove_renders_summary_fragment(client):
 
     response = client.delete(
         "/cart/remove/123",
-        headers={"HX-Request": "true", "HX-Target": "checkout-summary"},
+        headers={
+            **csrf_headers,
+            "HX-Request": "true",
+            "HX-Target": "checkout-summary",
+        },
     )
 
     assert response.status_code == 200
@@ -386,6 +413,8 @@ def test_admin_products_normalizes_invalid_page(mock_service, client):
     response = client.get("/admin/products?page=invalid")
 
     assert response.status_code == 200
+    assert b'action="/admin/logout" method="post"' in response.data
+    assert b'name="csrf_token"' in response.data
     assert mock_service.get_admin_catalog.call_args.kwargs["page"] == 1
 
 
@@ -436,7 +465,9 @@ def test_admin_orders_htmx_search_renders_panel(mock_service, client):
 
 
 @patch("app.routes.admin.OrderService")
-def test_admin_order_status_update_returns_empty_success(mock_service, client):
+def test_admin_order_status_update_returns_empty_success(
+    mock_service, client, csrf_headers
+):
     mock_service.update_status.return_value = object()
 
     with client.session_transaction() as sess:
@@ -445,7 +476,7 @@ def test_admin_order_status_update_returns_empty_success(mock_service, client):
     response = client.post(
         "/admin/orders/update/42",
         data={"status": "Shipped"},
-        headers={"HX-Request": "true"},
+        headers={**csrf_headers, "HX-Request": "true"},
     )
 
     assert response.status_code == 204
@@ -453,13 +484,14 @@ def test_admin_order_status_update_returns_empty_success(mock_service, client):
 
 
 @patch("app.routes.admin.ProductService")
-def test_admin_rejects_non_object_product_specs(mock_service, client):
+def test_admin_rejects_non_object_product_specs(mock_service, client, csrf_headers):
     with client.session_transaction() as sess:
         sess["admin_logged_in"] = True
 
     response = client.post(
         "/admin/products/add",
         data={"specs_json": "[]"},
+        headers=csrf_headers,
     )
 
     assert response.status_code == 400
@@ -467,7 +499,9 @@ def test_admin_rejects_non_object_product_specs(mock_service, client):
 
 
 @patch("app.routes.admin.ProductService")
-def test_admin_returns_validation_errors_from_product_service(mock_service, client):
+def test_admin_returns_validation_errors_from_product_service(
+    mock_service, client, csrf_headers
+):
     mock_service.create_product.side_effect = ValueError("Price is required.")
 
     with client.session_transaction() as sess:
@@ -482,6 +516,7 @@ def test_admin_returns_validation_errors_from_product_service(mock_service, clie
             "stock": "1",
             "specs_json": "{}",
         },
+        headers=csrf_headers,
     )
 
     assert response.status_code == 400
@@ -490,7 +525,7 @@ def test_admin_returns_validation_errors_from_product_service(mock_service, clie
 
 @patch("app.routes.admin.ProductService")
 def test_admin_returns_not_found_when_product_update_matches_nothing(
-    mock_service, client
+    mock_service, client, csrf_headers
 ):
     mock_service.update_product.return_value = None
 
@@ -500,6 +535,7 @@ def test_admin_returns_not_found_when_product_update_matches_nothing(
     response = client.post(
         "/admin/products/update/64b64b64b64b64b64b64b64b?field=price",
         data={"price": "10.00"},
+        headers=csrf_headers,
     )
 
     assert response.status_code == 404
