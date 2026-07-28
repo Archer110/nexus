@@ -21,3 +21,4 @@ class Config:
     # 3. APP SETTINGS (Safe to hardcode defaults here, or override via env)
     PRODUCTS_PER_PAGE = int(os.environ.get("PRODUCTS_PER_PAGE", 9))
     ADMIN_PER_PAGE = int(os.environ.get("ADMIN_PER_PAGE", 20))
+    ALLOW_DB_CLEAN = os.environ.get("ALLOW_DB_CLEAN", "0") == "1"

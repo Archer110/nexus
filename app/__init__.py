@@ -13,13 +13,18 @@ def create_app(config_class=Config):
     sql_db.init_app(app)
     migrate.init_app(app, sql_db)
 
-    # 2. Register Global Template Utilities
+    # 2. Register CLI Commands
+    from app.commands import register_commands
+
+    register_commands(app)
+
+    # 3. Register Global Template Utilities
     # This allows us to use toggle_url() in any template (for filters)
     from app.utils import toggle_url
 
     app.add_template_global(toggle_url, "toggle_url")
 
-    # 3. Register Blueprints
+    # 4. Register Blueprints
     from app.routes.admin import admin_bp
     from app.routes.cart import cart_bp
     from app.routes.store import store_bp

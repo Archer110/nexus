@@ -39,8 +39,17 @@ make seed
 The seed command is destructive: it replaces the product catalog and clears
 the SQL inventory and order ledger. Apply migrations before seeding.
 
-Databases created by the earlier pre-migration version should be recreated once
-before applying the initial migration.
+For a database created by the earlier pre-migration version, run:
+
+```bash
+make db-reset
+make seed
+```
+
+`db-reset` asks for confirmation, removes only NEXUS-managed SQL tables and
+Alembic state, then reapplies every migration. It requires the explicit
+development setting `ALLOW_DB_CLEAN=1`. MongoDB is reset separately by
+`make seed`.
 
 ## Quality checks
 

@@ -5,7 +5,7 @@ UV = uv
 GREEN = \033[0;32m
 NC = \033[0m
 
-.PHONY: run setup db-migrate db-upgrade seed format lint typecheck test check clean
+.PHONY: run setup db-clean db-reset db-migrate db-upgrade seed format lint typecheck test check clean
 
 run:
 	@echo "${GREEN}Starting Server...${NC}"
@@ -24,6 +24,11 @@ db-migrate:
 
 db-upgrade:
 	$(FLASK) --app run.py db upgrade
+
+db-clean:
+	$(FLASK) --app run.py db-clean
+
+db-reset: db-clean db-upgrade
 
 seed:
 	@echo "${GREEN}Resetting and seeding products...${NC}"
