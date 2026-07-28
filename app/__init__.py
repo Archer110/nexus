@@ -1,6 +1,10 @@
 from flask import Flask
+from redis import Redis
+from redis.backoff import ExponentialBackoff
+from redis.exceptions import BusyLoadingError, ConnectionError, TimeoutError
+from redis.retry import Retry
 
-from app.extensions import migrate, mongo, sql_db
+from app.extensions import migrate, mongo, server_session, sql_db
 from config import Config
 
 
@@ -12,6 +16,16 @@ def create_app(config_class=Config):
     mongo.init_app(app)
     sql_db.init_app(app)
     migrate.init_app(app, sql_db)
+    if app.config["SESSION_TYPE"] == "redis" and not app.config.get("SESSION_REDIS"):
+        app.config["SESSION_REDIS"] = Redis.from_url(
+            app.config["REDIS_URL"],
+            retry=Retry(ExponentialBackoff(), 3),
+            retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError],
+            socket_connect_timeout=2,
+            socket_timeout=2,
+            health_check_interval=30,
+        )
+    server_session.init_app(app)
 
     # 2. Register CLI Commands
     from app.commands import register_commands

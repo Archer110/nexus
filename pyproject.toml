@@ -7,6 +7,7 @@ dependencies = [
     "flask>=3.1.2",
     "flask-migrate>=4.1.0",
     "flask-pymongo>=3.0.1",
+    "flask-session[redis]>=0.8.0",
     "flask-sqlalchemy>=3.1.1",
     "mypy>=1.19.1",
     "psycopg2-binary>=2.9.11",
@@ -44,6 +45,7 @@ line-ending = "auto"
 
 [dependency-groups]
 dev = [
+    "fakeredis>=2.37.0",
     "pytest>=9.0.2",
     "ruff>=0.15.0",
 ]

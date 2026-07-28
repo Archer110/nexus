@@ -1,11 +1,31 @@
 import click
 from flask import Flask, current_app
+from redis.exceptions import RedisError
 from sqlalchemy import inspect, text
 
 from app.extensions import Base, sql_db
 
 
 def register_commands(app: Flask) -> None:
+    @app.cli.command("redis-check")
+    def redis_check() -> None:
+        """Verify that the configured session store is reachable."""
+        client = current_app.config.get("SESSION_REDIS")
+        if client is None:
+            raise click.ClickException("Redis session storage is not configured.")
+
+        try:
+            is_available = client.ping()
+        except RedisError as error:
+            raise click.ClickException(
+                "Redis session storage is unavailable."
+            ) from error
+
+        if not is_available:
+            raise click.ClickException("Redis session storage did not respond.")
+
+        click.echo("Redis session storage is available.")
+
     @app.cli.command("db-clean")
     @click.option(
         "--yes",

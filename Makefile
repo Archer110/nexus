@@ -5,11 +5,14 @@ UV = uv
 GREEN = \033[0;32m
 NC = \033[0m
 
-.PHONY: run setup db-clean db-reset db-migrate db-upgrade seed format lint typecheck test check clean
+.PHONY: run setup redis-check db-clean db-reset db-migrate db-upgrade seed format lint typecheck test check clean
 
 run:
 	@echo "${GREEN}Starting Server...${NC}"
 	$(FLASK) --app run.py run --debug
+
+redis-check:
+	$(FLASK) --app run.py redis-check
 
 setup:
 	@echo "${GREEN}Creating virtual environment with uv...${NC}"

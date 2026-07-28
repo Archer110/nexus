@@ -1,8 +1,9 @@
 # NEXUS
 
-NEXUS is a focused e-commerce demo built to explore polyglot persistence.
-MongoDB owns the flexible product catalog, while PostgreSQL owns inventory and
-the transactional order ledger. Flask services join the two data models for the
+NEXUS is a focused e-commerce demo built to explore polyglot data ownership.
+MongoDB owns the flexible product catalog, PostgreSQL owns inventory and the
+transactional order ledger, and Redis owns expiring server-side sessions and
+shopping carts. Flask services coordinate the three data stores for the
 storefront and administration interface.
 
 The project intentionally limits its product scope to catalog browsing,
@@ -13,13 +14,16 @@ faceted search, a cart, checkout, and basic product/order administration.
 - Python 3.12 and Flask
 - PostgreSQL with SQLAlchemy
 - MongoDB with PyMongo
+- Redis with Flask-Session
 - Jinja, HTMX, Alpine.js, and Tailwind CSS
 - uv, Ruff, MyPy, and Pytest
 
 ## Local development
 
-PostgreSQL and MongoDB must be running locally. Create the PostgreSQL database
-referenced by `DATABASE_URL` before starting the application.
+PostgreSQL, MongoDB, and Redis must be running locally. Create the PostgreSQL
+database referenced by `DATABASE_URL` before starting the application. The
+default Redis URL is `redis://localhost:6379/0`; verify the configured service
+with `make redis-check`.
 
 ```bash
 make setup
@@ -29,6 +33,12 @@ make run
 ```
 
 The development server is available at <http://localhost:5000>.
+
+Cart and login state are stored in Redis under the `nexus:session:` key prefix.
+The browser receives only an opaque session identifier. Sessions expire after
+24 hours by default and refresh their expiration while active; configure this
+with `SESSION_TTL_HOURS`. Set `SESSION_COOKIE_SECURE=1` whenever the application
+is served over HTTPS.
 
 To reset the databases and seed a synthetic product catalog:
 

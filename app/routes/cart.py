@@ -128,7 +128,7 @@ def add_to_cart(product_id):
 
     # 2. Add New Item (Fetch details from DB)
     if not found:
-        # This snapshot remains temporary until carts move to Redis.
+        # Redis owns this session snapshot; checkout still refreshes it from MongoDB.
         cart.append(
             {
                 "product_id": str(product["_id"]),
