@@ -1,15 +1,49 @@
+from decimal import Decimal
+from typing import Any
+
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
+from app.money import money, money_value
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 
 cart_bp = Blueprint("cart", __name__, url_prefix="/cart")
 
 
-def _cart_context():
-    cart = session.get("cart", [])
-    total = sum(item["price"] * item["qty"] for item in cart)
+def _cart_context() -> tuple[list[dict[str, Any]], Decimal]:
+    cart: list[dict[str, Any]] = []
+    total = Decimal("0.00")
+
+    for session_item in session.get("cart", []):
+        item = dict(session_item)
+        item["price"] = money(item["price"])
+        item["subtotal"] = item["price"] * int(item["qty"])
+        total += item["subtotal"]
+        cart.append(item)
+
     return cart, total
+
+
+def _refresh_cart_from_catalog() -> None:
+    cart = session.get("cart", [])
+    product_ids = [str(item["product_id"]) for item in cart]
+    products = ProductService.get_products_by_ids(product_ids)
+
+    for item in cart:
+        product = products.get(str(item["product_id"]))
+        if not product:
+            continue
+        item.update(
+            {
+                "name": product["name"],
+                "price": money_value(product["price"]),
+                "image": product["image"],
+                "specs": product.get("specs", {}),
+            }
+        )
+
+    if cart:
+        session.modified = True
 
 
 def _render_checkout_summary():
@@ -70,6 +104,7 @@ def add_to_cart(product_id):
         return _render_cart_error(f"{product['name']} is out of stock.")
 
     cart = session["cart"]
+    product_price = money_value(product["price"])
     found = False
 
     # 1. Check if already in cart (Update Qty)
@@ -83,7 +118,7 @@ def add_to_cart(product_id):
             item.update(
                 {
                     "name": product["name"],
-                    "price": product["price"],
+                    "price": product_price,
                     "image": product["image"],
                     "specs": product.get("specs", {}),
                 }
@@ -98,7 +133,7 @@ def add_to_cart(product_id):
             {
                 "product_id": str(product["_id"]),
                 "name": product["name"],
-                "price": product["price"],
+                "price": product_price,
                 "image": product["image"],
                 "specs": product.get("specs", {}),
                 "qty": 1,
@@ -179,6 +214,7 @@ def checkout_page():
     Renders the Checkout UI.
     Calculates totals on the fly from the session data.
     """
+    _refresh_cart_from_catalog()
     cart, total = _cart_context()
 
     return render_template("checkout.html", items=cart, total=total)

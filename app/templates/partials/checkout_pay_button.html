@@ -1,6 +1,6 @@
 {% if items %}
 <button type="submit" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-xl text-lg transition shadow-lg shadow-green-500/20">
-    Pay ${{ total }}
+    Pay ${{ total|money }}
 </button>
 {% else %}
 <button type="submit" disabled class="w-full bg-slate-800 text-slate-500 font-bold py-4 rounded-xl text-lg cursor-not-allowed border border-slate-700">

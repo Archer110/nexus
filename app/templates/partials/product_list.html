@@ -36,7 +36,7 @@
                     {{ product.name }}
                 </a>
             </h3>
-            <span class="text-cyan-400 font-mono font-bold">${{ product.price }}</span>
+            <span class="text-cyan-400 font-mono font-bold">${{ product.price|money }}</span>
         </div>
         
         <p class="text-sm text-slate-400 line-clamp-2 mb-4 flex-1">{{ product.description }}</p>

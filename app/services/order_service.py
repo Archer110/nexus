@@ -1,4 +1,4 @@
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import String, cast, func, or_, select
@@ -12,18 +12,8 @@ from app.models import (
     OrderItem,
     OrderStatus,
 )
-
-CENT = Decimal("0.01")
-
-
-def _money(value: Any) -> Decimal:
-    try:
-        amount = Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
-    except (InvalidOperation, TypeError, ValueError) as error:
-        raise ValueError("Invalid monetary value.") from error
-    if amount < 0:
-        raise ValueError("Monetary values cannot be negative.")
-    return amount
+from app.money import money
+from app.services.product_service import ProductService
 
 
 class OrderService:
@@ -54,6 +44,7 @@ class OrderService:
         product_ids = sorted({str(item["product_id"]) for item in cart_items})
 
         try:
+            products_by_id = ProductService.get_products_by_ids(product_ids)
             inventory_statement = (
                 select(Inventory)
                 .where(Inventory.product_id.in_(product_ids))
@@ -74,19 +65,23 @@ class OrderService:
                     raise ValueError("Cart quantities must be positive.")
 
                 product_id = str(item["product_id"])
-                product_name = str(item.get("name") or "Unknown Product")
+                product = products_by_id.get(product_id)
+                if not product:
+                    raise ValueError("A product in your cart is no longer available.")
+
+                product_name = str(product.get("name") or "Unknown Product")
                 inventory = inventory_by_product.get(product_id)
                 if not inventory or inventory.stock < quantity:
                     raise ValueError(f"Product {product_name} is out of stock!")
 
-                price = _money(item["price"])
+                price = money(product["price"])
                 inventory.stock -= quantity
                 order_items.append(
                     OrderItem(
                         product_id_str=product_id,
                         product_name=product_name,
-                        product_image=item.get("image"),
-                        product_specs=dict(item.get("specs") or {}),
+                        product_image=product.get("image"),
+                        product_specs=dict(product.get("specs") or {}),
                         quantity=quantity,
                         price_at_purchase=price,
                     )

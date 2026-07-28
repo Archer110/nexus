@@ -8,12 +8,20 @@ from sqlalchemy import select
 
 from app.extensions import get_mongo_db, sql_db
 from app.models import Inventory
+from app.money import bson_money, money_value
 
 
 class ProductService:
     """Coordinate MongoDB catalog data with PostgreSQL inventory."""
 
     CATALOG_EDITABLE_FIELDS = {"name", "category", "description", "image"}
+
+    @staticmethod
+    def _normalize_product(product: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(product)
+        normalized["_id"] = str(product["_id"])
+        normalized["price"] = money_value(product["price"])
+        return normalized
 
     @staticmethod
     def _inventory_by_product(product_ids: list[str]) -> dict[str, Inventory]:
@@ -30,11 +38,9 @@ class ProductService:
         stock: int | str,
     ) -> dict[str, Any]:
         stock_value = int(stock)
-        price = float(data.get("price", 0))
+        price = bson_money(data.get("price", 0))
         if stock_value < 0:
             raise ValueError("Stock cannot be negative.")
-        if price < 0:
-            raise ValueError("Price cannot be negative.")
 
         product_document: dict[str, Any] = {
             "name": data.get("name"),
@@ -61,6 +67,7 @@ class ProductService:
         return {
             **product_document,
             "_id": product_id,
+            "price": money_value(price),
             "stock": stock_value,
         }
 
@@ -89,14 +96,12 @@ class ProductService:
 
         products = get_mongo_db().products
         if field == "price":
-            price = float(value)
-            if price < 0:
-                raise ValueError("Price cannot be negative.")
+            price = bson_money(value)
             products.update_one(
                 {"_id": ObjectId(product_id)},
                 {"$set": {"price": price}},
             )
-            return price
+            return money_value(price)
 
         if field not in ProductService.CATALOG_EDITABLE_FIELDS:
             raise ValueError(f"Product field {field!r} cannot be edited.")
@@ -154,12 +159,13 @@ class ProductService:
         inventory = ProductService._inventory_by_product(
             [str(product["_id"]) for product in products]
         )
-        for product in products:
-            product_id = str(product["_id"])
-            product["_id"] = product_id
-            product["stock"] = (
+        for index, product in enumerate(products):
+            normalized = ProductService._normalize_product(product)
+            product_id = normalized["_id"]
+            normalized["stock"] = (
                 inventory[product_id].stock if product_id in inventory else 0
             )
+            products[index] = normalized
 
         return products, total_count
 
@@ -200,12 +206,13 @@ class ProductService:
         inventory = ProductService._inventory_by_product(
             [str(product["_id"]) for product in products]
         )
-        for product in products:
-            product_id = str(product["_id"])
-            product["_id"] = product_id
-            product["stock"] = (
+        for index, product in enumerate(products):
+            normalized = ProductService._normalize_product(product)
+            product_id = normalized["_id"]
+            normalized["stock"] = (
                 inventory[product_id].stock if product_id in inventory else 0
             )
+            products[index] = normalized
 
         return products, total_count
 
@@ -220,11 +227,30 @@ class ProductService:
         if not product:
             return None
 
-        product_id = str(product["_id"])
+        product = ProductService._normalize_product(product)
+        product_id = product["_id"]
         inventory = sql_db.session.get(Inventory, product_id)
-        product["_id"] = product_id
         product["stock"] = inventory.stock if inventory else 0
         return product
+
+    @staticmethod
+    def get_products_by_ids(
+        product_ids: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch authoritative catalog snapshots for cart reconciliation."""
+        object_ids = [
+            ObjectId(product_id)
+            for product_id in set(product_ids)
+            if ObjectId.is_valid(product_id)
+        ]
+        if not object_ids:
+            return {}
+
+        products = get_mongo_db().products.find({"_id": {"$in": object_ids}})
+        normalized = (
+            ProductService._normalize_product(product) for product in products
+        )
+        return {product["_id"]: product for product in normalized}
 
     @staticmethod
     def get_facets(

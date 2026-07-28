@@ -22,7 +22,7 @@
                         <div class="text-xs text-slate-500">{{ order.customer_email }}</div>
                     </td>
                     
-                    <td class="px-6 py-4 font-bold text-white font-mono">${{ order.total_amount }}</td>
+                    <td class="px-6 py-4 font-bold text-white font-mono">${{ order.total_amount|money }}</td>
                     
                     <td class="px-6 py-4">
                         <select 

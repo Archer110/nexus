@@ -2,6 +2,7 @@ import random
 from datetime import datetime, timedelta, timezone
 
 import requests
+from bson.decimal128 import Decimal128
 from faker import Faker
 from sqlalchemy import delete
 
@@ -226,7 +227,7 @@ def seed_data():
             products_to_insert.append(
                 {
                     "name": new_name,
-                    "price": new_price,
+                    "price": Decimal128(str(new_price)),
                     "description": parent["description"],
                     "category": category.replace(
                         "-", " "

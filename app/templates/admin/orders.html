@@ -79,7 +79,8 @@
              <div>
                  <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex justify-between">
                      <span>Packing List</span>
-                     <span class="text-white font-mono" x-text="'$' + activeOrder.total_amount"></span>
+                     <span class="text-white font-mono"
+                           x-text="'$' + Number(activeOrder.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })"></span>
                  </h4>
                  
                  <div class="space-y-3">

@@ -1,5 +1,4 @@
 <div class="flex h-full flex-col bg-slate-900">
-    {% set cart_totals = namespace(subtotal=0) %}
     <div class="flex items-center justify-between px-4 py-6 sm:px-6">
         <h2 class="text-lg font-medium text-white">Shopping Cart</h2>
         <button @click="cartOpen = false" class="text-slate-400 hover:text-white transition">
@@ -18,7 +17,6 @@
             <ul role="list" class="-my-6 divide-y divide-slate-700">
                 {% if cart %}
                     {% for item in cart %}
-                    {% set cart_totals.subtotal = cart_totals.subtotal + (item.price * item.qty) %}
                     <li class="flex py-6 animate-fade-in">
                         <div class="h-20 w-20 flex-shrink-0 overflow-hidden rounded-md border border-slate-700 bg-slate-800">
                             <img src="{{ item.image }}" class="h-full w-full object-cover object-center">
@@ -28,7 +26,7 @@
                             <div>
                                 <div class="flex justify-between text-base font-medium text-white">
                                     <h3 class="line-clamp-1"><a href="{{ url_for('store.product_detail', product_id=item.product_id) }}">{{ item.name }}</a></h3>
-                                    <p class="ml-4 font-mono text-cyan-400">${{ item.price }}</p>
+                                    <p class="ml-4 font-mono text-cyan-400">${{ item.price|money }}</p>
                                 </div>
                                 <p class="mt-1 text-sm text-slate-500">{{ item.specs|join(', ') if item.specs else 'Standard' }}</p>
                             </div>
@@ -75,7 +73,7 @@
         <div class="flex justify-between text-base font-medium text-white mb-4">
             <p>Subtotal</p>
             <p class="font-mono text-cyan-400">
-                ${{ "%.2f"|format(cart_totals.subtotal) }}
+                ${{ (total if total is defined else cart|cart_total)|money }}
             </p>
         </div>
         

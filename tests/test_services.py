@@ -3,6 +3,8 @@ from decimal import Decimal
 from unittest.mock import ANY, MagicMock
 
 import pytest
+from bson import ObjectId
+from bson.decimal128 import Decimal128
 from flask import Flask
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -19,7 +21,7 @@ def test_create_product_success(mocker, mock_mongo, mock_db):
     Scenario: Creating a product successfully writes to Mongo AND SQL.
     """
     # 1. Setup
-    data = {"name": "Test Item", "price": 100.0, "category": "Test"}
+    data = {"name": "Test Item", "price": "100.00", "category": "Test"}
     stock = 50
 
     # Mock Mongo Insert
@@ -36,8 +38,11 @@ def test_create_product_success(mocker, mock_mongo, mock_db):
     mock_db.commit.assert_called_once()
 
     assert result["_id"] == "mongo_id_123"
+    assert result["price"] == "100.00"
     assert result["stock"] == 50
     assert result["description"] == "Added via Admin"
+    inserted_product = mock_mongo.products.insert_one.call_args.args[0]
+    assert inserted_product["price"] == Decimal128("100.00")
 
 
 def test_create_product_rollback_on_sql_error(mocker, mock_mongo, mock_db):
@@ -67,7 +72,11 @@ def test_get_catalog_merges_data(mock_mongo, mock_db):
     Goal: Verify Mongo docs are merged with SQL inventory.
     """
     # 1. Mock Mongo Return
-    fake_product = {"_id": "prod_1", "name": "Laptop"}
+    fake_product = {
+        "_id": "prod_1",
+        "name": "Laptop",
+        "price": Decimal128("1499.90"),
+    }
 
     # Mock chain: find().sort().skip().limit()
     mock_cursor = MagicMock()
@@ -86,6 +95,31 @@ def test_get_catalog_merges_data(mock_mongo, mock_db):
     assert len(products) == 1
     assert products[0]["stock"] == 99  # <--- The Merge happened!
     assert products[0]["_id"] == "prod_1"
+    assert products[0]["price"] == "1499.90"
+
+
+def test_get_products_by_ids_normalizes_current_and_legacy_prices(mock_mongo):
+    first_id = "64b64b64b64b64b64b64b64b"
+    second_id = "64b64b64b64b64b64b64b64c"
+    mock_mongo.products.find.return_value = [
+        {
+            "_id": ObjectId(first_id),
+            "name": "Current",
+            "price": Decimal128("19.90"),
+        },
+        {
+            "_id": ObjectId(second_id),
+            "name": "Legacy",
+            "price": 10.1,
+        },
+    ]
+
+    products = ProductService.get_products_by_ids([first_id, second_id])
+
+    assert products[first_id]["price"] == "19.90"
+    assert products[second_id]["price"] == "10.10"
+    query = mock_mongo.products.find.call_args.args[0]
+    assert set(query["_id"]["$in"]) == {ObjectId(first_id), ObjectId(second_id)}
 
 
 def test_update_product_routes_correctly(mocker, mock_mongo, mock_db):
@@ -109,16 +143,17 @@ def test_update_product_routes_correctly(mocker, mock_mongo, mock_db):
         mock_db.commit.assert_called()
 
         # Test B: Price Update (Mongo)
-        ProductService.update_product(product_id, "price", 199.99)
+        updated_price = ProductService.update_product(product_id, "price", "199.99")
         mock_mongo.products.update_one.assert_called_with(
-            {"_id": ANY}, {"$set": {"price": 199.99}}
+            {"_id": ANY}, {"$set": {"price": Decimal128("199.99")}}
         )
+        assert updated_price == "199.99"
 
 
 # --- ORDER SERVICE TESTS (The "Strict" Logic) ---
 
 
-def test_create_order_happy_path(mock_db):
+def test_create_order_happy_path(mocker, mock_db):
     """
     Scenario: Standard Checkout.
     """
@@ -126,11 +161,11 @@ def test_create_order_happy_path(mock_db):
     cart = [
         {
             "product_id": "prod_1",
-            "name": "Test Product",
-            "image": "product.png",
-            "specs": {"color": "Black"},
+            "name": "Untrusted Session Name",
+            "image": "untrusted.png",
+            "specs": {"color": "Untrusted"},
             "qty": 2,
-            "price": 100,
+            "price": "0.01",
         }
     ]
     customer = {
@@ -145,6 +180,18 @@ def test_create_order_happy_path(mock_db):
     mock_inv = MagicMock(stock=10)
     mock_inv.product_id = "prod_1"
     mock_db.scalars.return_value.all.return_value = [mock_inv]
+    catalog = mocker.patch(
+        "app.services.order_service.ProductService.get_products_by_ids"
+    )
+    catalog.return_value = {
+        "prod_1": {
+            "_id": "prod_1",
+            "name": "Test Product",
+            "image": "product.png",
+            "specs": {"color": "Black"},
+            "price": "100.00",
+        }
+    }
 
     # 2. Execute
     order = OrderService.create_order(customer, cart)
@@ -159,7 +206,7 @@ def test_create_order_happy_path(mock_db):
     mock_db.commit.assert_called()
 
 
-def test_create_order_out_of_stock(mock_db):
+def test_create_order_out_of_stock(mocker, mock_db):
     """
     Scenario: Race Condition / Insufficient Stock.
     """
@@ -176,6 +223,16 @@ def test_create_order_out_of_stock(mock_db):
     mock_inv = MagicMock(stock=1)
     mock_inv.product_id = "prod_1"
     mock_db.scalars.return_value.all.return_value = [mock_inv]
+    catalog = mocker.patch(
+        "app.services.order_service.ProductService.get_products_by_ids"
+    )
+    catalog.return_value = {
+        "prod_1": {
+            "_id": "prod_1",
+            "name": "Test Product",
+            "price": "100.00",
+        }
+    }
 
     # Execute & Expect Error
     with pytest.raises(ValueError, match="is out of stock"):

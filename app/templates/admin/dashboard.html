@@ -10,7 +10,7 @@
                 <svg class="w-16 h-16 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </div>
             <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Total Revenue</p>
-            <h3 class="text-3xl font-bold text-white mt-2 font-mono">${{ revenue }}</h3>
+            <h3 class="text-3xl font-bold text-white mt-2 font-mono">${{ revenue|money }}</h3>
         </div>
         
         <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 relative overflow-hidden group hover:border-pink-500/50 transition">
@@ -68,7 +68,7 @@
                     <tr class="hover:bg-slate-700/30 transition">
                         <td class="px-6 py-4 font-mono text-xs text-cyan-400">#{{ order.id }}</td>
                         <td class="px-6 py-4 truncate max-w-[150px]">{{ order.customer_email }}</td>
-                        <td class="px-6 py-4 text-white font-mono">${{ order.total_amount }}</td>
+                        <td class="px-6 py-4 text-white font-mono">${{ order.total_amount|money }}</td>
                         <td class="px-6 py-4">
                             <span class="px-2 py-1 rounded text-xs font-bold 
                                 {% if order.status == 'Delivered' %}bg-green-500/10 text-green-400

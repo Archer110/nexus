@@ -20,9 +20,12 @@ def create_app(config_class=Config):
 
     # 3. Register Global Template Utilities
     # This allows us to use toggle_url() in any template (for filters)
+    from app.money import cart_total, format_money
     from app.utils import toggle_url
 
     app.add_template_global(toggle_url, "toggle_url")
+    app.add_template_filter(format_money, "money")
+    app.add_template_filter(cart_total, "cart_total")
 
     # 4. Register Blueprints
     from app.routes.admin import admin_bp

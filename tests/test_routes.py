@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
+from app.money import cart_total, format_money
+
 
 # --- FIXTURES ---
 @pytest.fixture
@@ -23,6 +25,8 @@ def client(mock_app_context):
     app = Flask(__name__, template_folder=str(template_dir))
     app.config["SECRET_KEY"] = "testing_key"
     app.config["TESTING"] = True
+    app.add_template_filter(format_money, "money")
+    app.add_template_filter(cart_total, "cart_total")
 
     # Register Blueprints
     app.register_blueprint(store_bp)
@@ -117,7 +121,8 @@ def test_checkout_requires_cart(client):
     assert "/" in response.location
 
 
-def test_checkout_page_uses_htmx_summary_controls(client):
+@patch("app.routes.cart.ProductService")
+def test_checkout_page_uses_htmx_summary_controls(mock_service, client):
     """
     Scenario: User opens checkout with items in cart.
     Goal: Verify quantity/remove controls target the checkout summary fragment.
@@ -127,18 +132,71 @@ def test_checkout_page_uses_htmx_summary_controls(client):
             {
                 "product_id": "123",
                 "name": "Test Item",
-                "price": 10.0,
+                "price": 0.01,
                 "image": "img.png",
                 "qty": 1,
             }
         ]
+
+    mock_service.get_products_by_ids.return_value = {
+        "123": {
+            "_id": "123",
+            "name": "Test Item",
+            "price": "10.00",
+            "image": "img.png",
+        }
+    }
 
     response = client.get("/cart/checkout-page")
 
     assert response.status_code == 200
     assert b'id="checkout-summary"' in response.data
     assert b'hx-target="#checkout-summary"' in response.data
-    assert b"Pay $10.0" in response.data
+    assert b"Pay $10.00" in response.data
+
+    with client.session_transaction() as sess:
+        assert sess["cart"][0]["price"] == "10.00"
+
+
+@patch("app.routes.cart.ProductService")
+def test_checkout_displays_exact_authoritative_total(mock_service, client):
+    with client.session_transaction() as sess:
+        sess["cart"] = [
+            {
+                "product_id": "123",
+                "name": "First",
+                "price": 0.01,
+                "image": "first.png",
+                "qty": 1,
+            },
+            {
+                "product_id": "456",
+                "name": "Second",
+                "price": 0.01,
+                "image": "second.png",
+                "qty": 1,
+            },
+        ]
+
+    mock_service.get_products_by_ids.return_value = {
+        "123": {
+            "_id": "123",
+            "name": "First",
+            "price": 685.9,
+            "image": "first.png",
+        },
+        "456": {
+            "_id": "456",
+            "name": "Second",
+            "price": "685.90",
+            "image": "second.png",
+        },
+    }
+
+    response = client.get("/cart/checkout-page")
+
+    assert response.status_code == 200
+    assert b"Pay $1,371.80" in response.data
 
 
 @patch("app.routes.cart.ProductService")
