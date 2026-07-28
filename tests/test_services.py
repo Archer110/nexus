@@ -12,6 +12,7 @@ from app.services.product_service import ProductService
 
 # --- PRODUCT SERVICE TESTS (The "Hybrid" Logic) ---
 
+
 def test_create_product_success(mocker, mock_mongo, mock_db):
     """
     Scenario: Creating a product successfully writes to Mongo AND SQL.
@@ -32,18 +33,20 @@ def test_create_product_success(mocker, mock_mongo, mock_db):
     # Verify SQL was called (Inventory creation)
     mock_db.add.assert_called_once()
     mock_db.commit.assert_called_once()
-    
+
     assert result["_id"] == "mongo_id_123"
     assert result["stock"] == 50
+    assert result["description"] == "Added via Admin"
+
 
 def test_create_product_rollback_on_sql_error(mocker, mock_mongo, mock_db):
     """
-    Scenario: SQL fails (e.g., DB connection lost). 
+    Scenario: SQL fails (e.g., DB connection lost).
     Goal: Verify we delete the orphaned Mongo document (Rollback).
     """
     # 1. Setup
     mock_mongo.products.insert_one.return_value.inserted_id = "mongo_id_123"
-    
+
     # Simulate SQL Error
     mock_db.commit.side_effect = SQLAlchemyError("SQL Connection Dead")
 
@@ -56,14 +59,15 @@ def test_create_product_rollback_on_sql_error(mocker, mock_mongo, mock_db):
     # CRITICAL: Verify we cleaned up the Mongo document
     mock_mongo.products.delete_one.assert_called_with({"_id": "mongo_id_123"})
 
+
 def test_get_catalog_merges_data(mocker, mock_mongo):
     """
-    Scenario: The 'Hybrid Join'. 
+    Scenario: The 'Hybrid Join'.
     Goal: Verify Mongo docs are merged with SQL inventory.
     """
     # 1. Mock Mongo Return
     fake_product = {"_id": "prod_1", "name": "Laptop"}
-    
+
     # Mock chain: find().sort().skip().limit()
     mock_cursor = MagicMock()
     mock_cursor.skip.return_value.limit.return_value = [fake_product]
@@ -83,7 +87,9 @@ def test_get_catalog_merges_data(mocker, mock_mongo):
     with test_app.app_context():
         # 2. Mock SQL Return (Inventory)
         # Patch after the app context is active so Flask-SQLAlchemy can resolve the descriptor.
-        with patch("app.services.product_service.Inventory.query") as mock_inventory_query:
+        with patch(
+            "app.services.product_service.Inventory.query"
+        ) as mock_inventory_query:
             mock_inventory_query.filter.return_value.all.return_value = [fake_inv]
 
             # 3. Execute
@@ -93,6 +99,7 @@ def test_get_catalog_merges_data(mocker, mock_mongo):
     assert len(products) == 1
     assert products[0]["stock"] == 99  # <--- The Merge happened!
     assert products[0]["_id"] == "prod_1"
+
 
 def test_update_product_routes_correctly(mocker, mock_mongo, mock_db):
     """
@@ -108,8 +115,8 @@ def test_update_product_routes_correctly(mocker, mock_mongo, mock_db):
     with test_app.app_context():
         # Test A: Stock Update (SQL)
         mock_inventory = MagicMock(stock=10)
-        with patch("app.services.product_service.Inventory.query.get", return_value=mock_inventory):
-            updated_stock = ProductService.update_product(product_id, "stock", 20)
+        mock_db.get.return_value = mock_inventory
+        updated_stock = ProductService.update_product(product_id, "stock", 20)
 
         assert updated_stock == 20
         mock_db.commit.assert_called()
@@ -120,7 +127,9 @@ def test_update_product_routes_correctly(mocker, mock_mongo, mock_db):
             {"_id": ANY}, {"$set": {"price": 199.99}}
         )
 
+
 # --- ORDER SERVICE TESTS (The "Strict" Logic) ---
+
 
 def test_create_order_happy_path(mocker, mock_db):
     """
@@ -141,15 +150,16 @@ def test_create_order_happy_path(mocker, mock_db):
     # 3. Assert
     assert order is not None
     assert mock_inv.stock == 8  # Deducted 2
-    mock_db.add.assert_called() # Order added
-    mock_db.commit.assert_called() # Transaction committed
+    mock_db.add.assert_called()  # Order added
+    mock_db.commit.assert_called()  # Transaction committed
+
 
 def test_create_order_out_of_stock(mocker, mock_db):
     """
     Scenario: Race Condition / Insufficient Stock.
     """
     cart = [{"product_id": "prod_1", "qty": 5, "price": 100, "name": "Test Product"}]
-    
+
     # Mock Inventory (Stock = 1) - Too low!
     mock_inv = MagicMock(stock=1)
     mock_query = mocker.patch("app.services.order_service.Inventory.query")
@@ -160,8 +170,9 @@ def test_create_order_out_of_stock(mocker, mock_db):
         OrderService.create_order({}, cart)
 
     # Assert Safety
-    mock_db.commit.assert_not_called() # Ensure no partial order saved
-    mock_db.rollback.assert_called()   # Ensure transaction rolled back
+    mock_db.commit.assert_not_called()  # Ensure no partial order saved
+    mock_db.rollback.assert_called()  # Ensure transaction rolled back
+
 
 def test_get_order_details_merges_mongo(mocker, mock_mongo):
     """
@@ -208,3 +219,4 @@ def test_get_order_details_merges_mongo(mocker, mock_mongo):
     item = result["items"][0]
     assert item["name"] == "Super Widget"
     assert item["image"] == "img.jpg"
+    assert result["shipping_address"] == "123 Main St"

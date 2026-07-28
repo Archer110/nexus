@@ -1,4 +1,5 @@
 <div class="flex h-full flex-col bg-slate-900">
+    {% set cart_totals = namespace(subtotal=0) %}
     <div class="flex items-center justify-between px-4 py-6 sm:px-6">
         <h2 class="text-lg font-medium text-white">Shopping Cart</h2>
         <button @click="cartOpen = false" class="text-slate-400 hover:text-white transition">
@@ -8,10 +9,16 @@
     </div>
 
     <div class="flex-1 overflow-y-auto px-4 sm:px-6 drawer-scroll">
+        {% if cart_error %}
+        <div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            {{ cart_error }}
+        </div>
+        {% endif %}
         <div class="flow-root">
             <ul role="list" class="-my-6 divide-y divide-slate-700">
                 {% if cart %}
                     {% for item in cart %}
+                    {% set cart_totals.subtotal = cart_totals.subtotal + (item.price * item.qty) %}
                     <li class="flex py-6 animate-fade-in">
                         <div class="h-20 w-20 flex-shrink-0 overflow-hidden rounded-md border border-slate-700 bg-slate-800">
                             <img src="{{ item.image }}" class="h-full w-full object-cover object-center">
@@ -68,7 +75,7 @@
         <div class="flex justify-between text-base font-medium text-white mb-4">
             <p>Subtotal</p>
             <p class="font-mono text-cyan-400">
-                ${{ cart | map(attribute='price') | sum if cart else 0 }}
+                ${{ "%.2f"|format(cart_totals.subtotal) }}
             </p>
         </div>
         

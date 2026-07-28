@@ -3,6 +3,7 @@ from functools import wraps
 
 from flask import (
     Blueprint,
+    abort,
     current_app,
     redirect,
     render_template,
@@ -11,7 +12,7 @@ from flask import (
     url_for,
 )
 
-# THE CRITICAL CHANGE: 
+# THE CRITICAL CHANGE:
 # We import Services, NOT Models or Database extensions.
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
@@ -32,7 +33,9 @@ def admin_required(f):
         if not session.get("admin_logged_in"):
             return redirect(url_for("admin.admin_login"))
         return f(*args, **kwargs)
+
     return decorated
+
 
 # --- LOGIN/LOGOUT ---
 @admin_bp.route("/login", methods=["GET", "POST"])
@@ -47,6 +50,7 @@ def admin_login():
         else:
             error = "Invalid credentials"
     return render_template("admin/login.html", error=error)
+
 
 @admin_bp.route("/logout")
 def admin_logout():
@@ -91,9 +95,7 @@ def admin_products():
 
     # Call the specialized Admin Catalog method
     products, total_products = ProductService.get_admin_catalog(
-        page=page, 
-        per_page=per_page, 
-        search_query=search_query
+        page=page, per_page=per_page, search_query=search_query
     )
 
     template_ctx = {
@@ -110,9 +112,12 @@ def admin_products():
     if request.headers.get("HX-Request"):
         if request.headers.get("HX-Target") == "admin-products-load-more":
             return render_template("admin/partials/products_list.html", **template_ctx)
-        return render_template("admin/partials/products_panel.html", **template_ctx, oob=True)
+        return render_template(
+            "admin/partials/products_panel.html", **template_ctx, oob=True
+        )
 
     return render_template("admin/products.html", **template_ctx)
+
 
 @admin_bp.route("/products/add", methods=["POST"])
 @admin_required
@@ -120,8 +125,12 @@ def admin_add_product():
     # 1. Parse JSON Specs (if any)
     try:
         specs = json.loads(request.form.get("specs_json", "{}"))
+        if not isinstance(specs, dict):
+            raise ValueError
     except (TypeError, json.JSONDecodeError):
-        specs = {}
+        return "Product specifications must be a JSON object.", 400
+    except ValueError:
+        return "Product specifications must be a JSON object.", 400
 
     data = {
         "name": request.form.get("name"),
@@ -139,6 +148,7 @@ def admin_add_product():
     # 3. Render Row (HTMX)
     return render_template("admin/partials/product_row.html", product=new_product)
 
+
 @admin_bp.route("/products/update/<product_id>", methods=["POST"])
 @admin_required
 def admin_update_product(product_id):
@@ -154,6 +164,7 @@ def admin_update_product(product_id):
     if field == "price":
         return f"${new_val}"
     return f"{new_val}"
+
 
 @admin_bp.route("/products/delete/<product_id>", methods=["DELETE"])
 @admin_required
@@ -180,13 +191,20 @@ def admin_orders():
 
     return render_template("admin/orders.html", orders=orders, q=search_query)
 
+
 @admin_bp.route("/orders/update/<int:order_id>", methods=["POST"])
 @admin_required
 def update_order_status(order_id):
     new_status = request.form.get("status")
-    
-    order = OrderService.update_status(order_id, new_status)
+    if not new_status:
+        return "Order status is required.", 400
 
-    # Return the updated select dropdown (HTMX pattern)
-    # (Simplified for brevity, assumes you have a macro or snippet for this)
-    return render_template("admin/partials/order_status_select.html", order=order)
+    try:
+        order = OrderService.update_status(order_id, new_status)
+    except ValueError as error:
+        return str(error), 400
+
+    if not order:
+        abort(404)
+
+    return "", 204

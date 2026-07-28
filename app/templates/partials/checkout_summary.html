@@ -1,6 +1,12 @@
 <div id="checkout-summary" class="sticky top-32 bg-slate-800 rounded-2xl p-6 border border-slate-700">
     <h3 class="text-lg font-bold mb-6 text-white">Order Summary</h3>
 
+    {% if cart_error %}
+    <div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+        {{ cart_error }}
+    </div>
+    {% endif %}
+
     {% if items %}
     <div class="space-y-4 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
         {% for item in items %}

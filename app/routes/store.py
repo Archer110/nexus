@@ -62,11 +62,11 @@ def index():
         "next_page_url": _store_url_with_page(page + 1),
         "cat": category,
         "q": query,
-        "spec_filters": spec_filters
+        "spec_filters": spec_filters,
     }
 
     # 6. Render (HTMX Support)
-    # If the request comes from HTMX (e.g. clicking a filter), 
+    # If the request comes from HTMX (e.g. clicking a filter),
     # we only render the product grid, not the whole page.
     if request.headers.get("HX-Request"):
         target = request.headers.get("HX-Target")

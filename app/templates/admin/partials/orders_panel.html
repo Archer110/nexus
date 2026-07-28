@@ -33,16 +33,19 @@
                             hx-trigger="change"
                             hx-swap="none" 
                             style="background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlPSJjdXJyZW50Q29xvciBzdHJva2Utd2lkdGg9IjIiPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgZD0iTTE5IDlsLTcgNy03LTciLz48L3N2Zz4='); background-size: 1em;">
-                            <option value="Processing" class="bg-slate-800 text-yellow-500">Processing</option>
+                            <option value="{{ order.status }}" class="bg-slate-800">{{ order.status }}</option>
+                            {% if order.status == "Processing" %}
                             <option value="Shipped" class="bg-slate-800 text-blue-400">Shipped</option>
-                            <option value="Delivered" class="bg-slate-800 text-green-400">Delivered</option>
                             <option value="Cancelled" class="bg-slate-800 text-red-400">Cancelled</option>
+                            {% elif order.status == "Shipped" %}
+                            <option value="Delivered" class="bg-slate-800 text-green-400">Delivered</option>
+                            {% endif %}
                         </select>
                     </td>
 
                     <td class="px-6 py-4 text-right">
                         <button 
-                            data-order='{{ order.to_dict() | tojson }}'
+                            data-order='{{ order | tojson }}'
                             @click="
                                 let data = JSON.parse($el.dataset.order);
                                 activeOrder = data; 
