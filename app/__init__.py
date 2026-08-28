@@ -46,10 +46,12 @@ def create_app(config_class: type[BaseConfig] = Config) -> Flask:
     # 4. Register Blueprints
     from app.routes.admin import admin_bp
     from app.routes.cart import cart_bp
+    from app.routes.health import health_bp
     from app.routes.store import store_bp
 
     app.register_blueprint(store_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(cart_bp)
+    app.register_blueprint(health_bp)
 
     return app

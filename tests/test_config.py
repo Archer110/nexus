@@ -14,6 +14,7 @@ def test_application_factory_registers_complete_application_wiring(app):
         "store.index",
         "cart.checkout",
         "admin.dashboard",
+        "health.readiness",
     } <= {rule.endpoint for rule in app.url_map.iter_rules()}
 
 
