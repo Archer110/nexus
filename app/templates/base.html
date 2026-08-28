@@ -30,8 +30,8 @@
              x-transition.opacity.duration.500ms
              @click="cartOpen = false"></div>
 
-        <div class="fixed inset-0 overflow-hidden">
-            <div class="absolute inset-0 overflow-hidden">
+        <div class="pointer-events-none fixed inset-0 overflow-hidden">
+            <div class="pointer-events-none absolute inset-0 overflow-hidden">
                 <div class="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10">
                     
                     <div class="pointer-events-auto w-screen max-w-md"
@@ -68,6 +68,7 @@
                     <span class="font-bold text-2xl text-white">NEXUS</span>
                 </a>
 
+                {% block catalog_search %}
                 <div class="hidden md:block flex-1 max-w-2xl mx-8">
                     <input type="text" name="q"
                            hx-get="{{ url_for('store.index') }}" 
@@ -78,6 +79,7 @@
                            value="{{ q|default('', true) }}"
                            class="w-full bg-slate-800/80 border border-slate-700 rounded-full py-2 px-6 text-sm focus:outline-none focus:border-cyan-400 text-white">
                 </div>
+                {% endblock %}
 
                 <div class="flex items-center gap-6">
                     

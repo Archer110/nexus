@@ -43,6 +43,19 @@ def test_store_htmx_partial_render(mock_service, client):
 
 
 @patch("app.routes.store.ProductService")
+def test_store_cart_drawer_backdrop_is_dismissible(mock_service, client):
+    mock_service.get_catalog.return_value = ([], 0)
+    mock_service.get_facets.return_value = ([], {})
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b'@click="cartOpen = false"' in response.data
+    assert b"pointer-events-none fixed inset-0 overflow-hidden" in response.data
+    assert b"Continue Shopping" not in response.data
+
+
+@patch("app.routes.store.ProductService")
 def test_store_normalizes_pagination_and_rejects_unsafe_filter_keys(
     mock_service, client
 ):
@@ -179,6 +192,7 @@ def test_checkout_page_uses_htmx_summary_controls(mock_service, client):
     assert b'id="checkout-summary"' in response.data
     assert b'hx-target="#checkout-summary"' in response.data
     assert b"Pay $10.00" in response.data
+    assert b"Search catalog..." not in response.data
 
     with client.session_transaction() as sess:
         assert sess["cart"][0]["price"] == "10.00"
