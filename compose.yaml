@@ -1,0 +1,109 @@
+name: nexus
+
+x-app-environment: &app-environment
+  MONGO_URI: mongodb://mongo:27017/nexus_catalog
+  DATABASE_URL: postgresql://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus-development-only}@postgres:5432/${POSTGRES_DB:-nexus}
+  REDIS_URL: redis://redis:6379/0
+  SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
+  SESSION_COOKIE_SECURE: "0"
+  ALLOW_DB_CLEAN: "1"
+  FLASK_DEBUG: "0"
+  PRODUCTS_PER_PAGE: ${PRODUCTS_PER_PAGE:-9}
+  ADMIN_PER_PAGE: ${ADMIN_PER_PAGE:-20}
+
+x-app-env-file: &app-env-file
+  - path: .env.compose
+    required: true
+    format: raw
+
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    image: nexus-app:local
+    init: true
+    env_file: *app-env-file
+    environment: *app-environment
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:5000/health/ready', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  migrate:
+    build:
+      context: .
+      target: runtime
+    image: nexus-app:local
+    init: true
+    env_file: *app-env-file
+    environment: *app-environment
+    command: ["flask", "--app", "run.py", "db", "upgrade"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  postgres:
+    image: postgres:17.11-alpine3.24
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nexus}
+      POSTGRES_USER: ${POSTGRES_USER:-nexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus-development-only}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  mongo:
+    image: mongo:8.2.11-noble
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:8.10.0-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
