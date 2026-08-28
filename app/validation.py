@@ -12,6 +12,17 @@ MAX_SPEC_FILTERS = 20
 MAX_SPEC_VALUES = 20
 MAX_SPEC_KEY_LENGTH = 50
 MAX_SPEC_VALUE_LENGTH = 200
+ADMIN_PRODUCT_SORTS = frozenset(
+    {
+        "newest",
+        "oldest",
+        "name_asc",
+        "name_desc",
+        "price_asc",
+        "price_desc",
+        "category_asc",
+    }
+)
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -28,6 +39,12 @@ def page_number(value: object, default: int = 1) -> int:
 def search_term(value: object) -> str:
     """Return a bounded search term suitable for a datastore query."""
     return str(value or "").strip()[:MAX_SEARCH_LENGTH]
+
+
+def admin_product_sort(value: object, default: str = "newest") -> str:
+    """Return an allowlisted admin catalog sort key."""
+    normalized = str(value or "").strip()
+    return normalized if normalized in ADMIN_PRODUCT_SORTS else default
 
 
 def is_safe_spec_key(value: object) -> bool:

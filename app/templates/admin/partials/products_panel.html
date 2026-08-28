@@ -19,8 +19,8 @@
     
     <div class="mt-6 flex justify-center gap-2 pb-8">
         {% if page > 1 %}
-        <a href="{{ url_for('admin.admin_products', page=page-1, q=q) }}"
-           hx-get="{{ url_for('admin.admin_products', page=page-1, q=q) }}"
+        <a href="{{ url_for('admin.admin_products', page=page-1, q=q, sort=sort) }}"
+           hx-get="{{ url_for('admin.admin_products', page=page-1, q=q, sort=sort) }}"
            hx-target="#admin-products-panel"
            hx-swap="outerHTML"
            hx-push-url="true"
@@ -32,8 +32,8 @@
         <span class="px-4 py-2 text-slate-500 text-sm font-mono flex items-center">Page {{ page }}</span>
 
         {% if (page * per_page) < total %}
-        <a href="{{ url_for('admin.admin_products', page=page+1, q=q) }}"
-           hx-get="{{ url_for('admin.admin_products', page=page+1, q=q) }}"
+        <a href="{{ url_for('admin.admin_products', page=page+1, q=q, sort=sort) }}"
+           hx-get="{{ url_for('admin.admin_products', page=page+1, q=q, sort=sort) }}"
            hx-target="#admin-products-panel"
            hx-swap="outerHTML"
            hx-push-url="true"

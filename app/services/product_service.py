@@ -15,6 +15,7 @@ from app.extensions import get_mongo_db, sql_db
 from app.models import Inventory
 from app.money import bson_money, money_value
 from app.validation import (
+    admin_product_sort,
     is_safe_spec_key,
     non_negative_int,
     optional_text,
@@ -36,6 +37,15 @@ class ProductService:
     CATALOG_EDITABLE_FIELDS = {"name", "category", "description", "image"}
     MAX_PRICE = Decimal("9999999999.99")
     DEFAULT_IMAGE = "https://placehold.co/600x400"
+    ADMIN_CATALOG_SORTS: dict[str, list[tuple[str, int]]] = {
+        "newest": [("created_at", -1), ("_id", -1)],
+        "oldest": [("created_at", 1), ("_id", 1)],
+        "name_asc": [("name", 1), ("_id", 1)],
+        "name_desc": [("name", -1), ("_id", -1)],
+        "price_asc": [("price", 1), ("_id", 1)],
+        "price_desc": [("price", -1), ("_id", -1)],
+        "category_asc": [("category", 1), ("name", 1), ("_id", 1)],
+    }
 
     @staticmethod
     def _normalize_product(product: dict[str, Any]) -> CatalogProduct:
@@ -267,12 +277,14 @@ class ProductService:
         page: int = 1,
         per_page: int | None = 9,
         search_query: str | None = "",
+        sort_by: str | None = "newest",
     ) -> tuple[list[CatalogProduct], int]:
         if per_page is None:
             per_page = int(current_app.config.get("ADMIN_PER_PAGE", 20))
         page = positive_int(page, "Page")
         per_page = positive_int(per_page, "Page size")
         search_query = search_term(search_query)
+        sort_by = admin_product_sort(sort_by)
 
         query_filter: dict[str, Any] = {}
         if search_query:
@@ -296,7 +308,9 @@ class ProductService:
         products_collection = get_mongo_db().products
         total_count = products_collection.count_documents(query_filter)
         skip = (page - 1) * per_page
-        cursor = products_collection.find(query_filter).sort("created_at", -1)
+        cursor = products_collection.find(query_filter).sort(
+            ProductService.ADMIN_CATALOG_SORTS[sort_by]
+        )
         products = list(cursor.skip(skip).limit(per_page))
 
         inventory = ProductService._inventory_by_product(

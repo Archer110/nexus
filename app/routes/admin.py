@@ -18,7 +18,7 @@ from werkzeug.security import check_password_hash
 # We import Services, NOT Models or Database extensions.
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
-from app.validation import page_number, search_term
+from app.validation import admin_product_sort, page_number, search_term
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -108,10 +108,14 @@ def admin_products():
     page = page_number(request.args.get("page"))
     per_page = current_app.config.get("ADMIN_PER_PAGE", 10)
     search_query = search_term(request.args.get("q"))
+    sort_by = admin_product_sort(request.args.get("sort"))
 
     # Call the specialized Admin Catalog method
     products, total_products = ProductService.get_admin_catalog(
-        page=page, per_page=per_page, search_query=search_query
+        page=page,
+        per_page=per_page,
+        search_query=search_query,
+        sort_by=sort_by,
     )
 
     template_ctx = {
@@ -122,6 +126,7 @@ def admin_products():
         "has_next": page * per_page < total_products,
         "next_page_url": _admin_products_url_with_page(page + 1),
         "q": search_query,
+        "sort": sort_by,
     }
 
     # HTMX Support for search/pagination

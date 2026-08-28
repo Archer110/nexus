@@ -11,19 +11,41 @@
             </p>
         </div>
         
-        <div class="flex gap-3 w-full md:w-auto">
-            <div class="relative w-full md:w-64">
-                <input type="text" 
-                       name="q" 
-                       value="{{ q }}"
-                       hx-get="{{ url_for('admin.admin_products') }}"
-                       hx-trigger="keyup changed delay:500ms"
-                       hx-target="#admin-products-panel"
-                       hx-swap="outerHTML"
-                       hx-push-url="true"
-                       placeholder="Search products..." 
-                       class="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg pl-10 pr-4 py-2 focus:border-cyan-500 focus:outline-none">
-                <svg class="w-4 h-4 text-slate-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        <div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            <div id="admin-product-controls" class="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                <div class="relative w-full md:w-64">
+                    <input type="text" 
+                           name="q" 
+                           value="{{ q }}"
+                           hx-get="{{ url_for('admin.admin_products') }}"
+                           hx-trigger="keyup changed delay:500ms"
+                           hx-include="#admin-product-controls"
+                           hx-target="#admin-products-panel"
+                           hx-swap="outerHTML"
+                           hx-push-url="true"
+                           placeholder="Search products..." 
+                           class="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg pl-10 pr-4 py-2 focus:border-cyan-500 focus:outline-none">
+                    <svg class="w-4 h-4 text-slate-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+
+                <label for="admin-product-sort" class="sr-only">Sort products</label>
+                <select id="admin-product-sort"
+                        name="sort"
+                        hx-get="{{ url_for('admin.admin_products') }}"
+                        hx-trigger="change"
+                        hx-include="#admin-product-controls"
+                        hx-target="#admin-products-panel"
+                        hx-swap="outerHTML"
+                        hx-push-url="true"
+                        class="w-full sm:w-auto bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 focus:border-cyan-500 focus:outline-none">
+                    <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Newest first</option>
+                    <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>Oldest first</option>
+                    <option value="name_asc" {% if sort == 'name_asc' %}selected{% endif %}>Name: A–Z</option>
+                    <option value="name_desc" {% if sort == 'name_desc' %}selected{% endif %}>Name: Z–A</option>
+                    <option value="price_asc" {% if sort == 'price_asc' %}selected{% endif %}>Price: low to high</option>
+                    <option value="price_desc" {% if sort == 'price_desc' %}selected{% endif %}>Price: high to low</option>
+                    <option value="category_asc" {% if sort == 'category_asc' %}selected{% endif %}>Category: A–Z</option>
+                </select>
             </div>
 
             <button @click="addOpen = !addOpen" class="bg-cyan-500 text-black px-4 py-2 rounded-lg font-bold hover:bg-cyan-400 transition shadow-lg shadow-cyan-500/20 whitespace-nowrap">

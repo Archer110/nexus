@@ -183,6 +183,28 @@ def test_get_catalog_rejects_unsafe_filter_paths_from_non_http_callers(
     }
 
 
+@pytest.mark.parametrize(
+    ("sort_by", "expected_sort"),
+    [
+        ("price_desc", [("price", -1), ("_id", -1)]),
+        ("name_asc", [("name", 1), ("_id", 1)]),
+        ("unexpected", [("created_at", -1), ("_id", -1)]),
+    ],
+)
+def test_get_admin_catalog_applies_allowlisted_sort_before_pagination(
+    sort_by, expected_sort, mock_mongo, mock_db
+):
+    mock_cursor = MagicMock()
+    mock_cursor.skip.return_value.limit.return_value = []
+    mock_mongo.products.find.return_value.sort.return_value = mock_cursor
+    mock_mongo.products.count_documents.return_value = 0
+
+    ProductService.get_admin_catalog(sort_by=sort_by)
+
+    mock_mongo.products.find.return_value.sort.assert_called_once_with(expected_sort)
+    mock_cursor.skip.assert_called_once_with(0)
+
+
 def test_get_products_by_ids_normalizes_current_and_legacy_prices(mock_mongo):
     first_id = "64b64b64b64b64b64b64b64b"
     second_id = "64b64b64b64b64b64b64b64c"

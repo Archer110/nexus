@@ -389,7 +389,7 @@ def test_admin_products_htmx_renders_panel(mock_service, client):
         sess["admin_logged_in"] = True
 
     response = client.get(
-        "/admin/products?q=laptop&page=2",
+        "/admin/products?q=laptop&page=2&sort=price_desc",
         headers={"HX-Request": "true"},
     )
 
@@ -397,10 +397,12 @@ def test_admin_products_htmx_renders_panel(mock_service, client):
     assert b'id="admin-products-panel"' in response.data
     assert b'id="admin-products-count"' in response.data
     assert b"NEXUS ADMIN" not in response.data
+    assert b"sort=price_desc" in response.data
 
     call_args = mock_service.get_admin_catalog.call_args[1]
     assert call_args["page"] == 2
     assert call_args["search_query"] == "laptop"
+    assert call_args["sort_by"] == "price_desc"
 
 
 @patch("app.routes.admin.ProductService")
@@ -410,12 +412,14 @@ def test_admin_products_normalizes_invalid_page(mock_service, client):
     with client.session_transaction() as sess:
         sess["admin_logged_in"] = True
 
-    response = client.get("/admin/products?page=invalid")
+    response = client.get("/admin/products?page=invalid&sort=unexpected")
 
     assert response.status_code == 200
     assert b'action="/admin/logout" method="post"' in response.data
     assert b'name="csrf_token"' in response.data
     assert mock_service.get_admin_catalog.call_args.kwargs["page"] == 1
+    assert mock_service.get_admin_catalog.call_args.kwargs["sort_by"] == "newest"
+    assert b'<option value="newest" selected>Newest first</option>' in response.data
 
 
 @patch("app.routes.admin.OrderService")

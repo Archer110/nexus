@@ -1,6 +1,7 @@
 import pytest
 
 from app.validation import (
+    admin_product_sort,
     checkout_customer,
     page_number,
     product_specs,
@@ -14,6 +15,12 @@ def test_page_number_recovers_from_invalid_and_negative_values():
     assert page_number("invalid") == 1
     assert page_number("-5") == 1
     assert page_number("3") == 3
+
+
+def test_admin_product_sort_accepts_only_supported_values():
+    assert admin_product_sort("price_desc") == "price_desc"
+    assert admin_product_sort("unexpected") == "newest"
+    assert admin_product_sort(None) == "newest"
 
 
 def test_spec_filters_exclude_unsafe_mongo_paths_and_empty_values():
