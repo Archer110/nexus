@@ -18,7 +18,53 @@ faceted search, a cart, checkout, and basic product/order administration.
 - Jinja, HTMX, Alpine.js, and Tailwind CSS
 - uv, Ruff, MyPy, and Pytest
 
-## Local development
+## Docker Compose development
+
+Docker Compose is the recommended cold-clone workflow. It builds the Flask image,
+starts PostgreSQL, MongoDB, and Redis with persistent named volumes, waits for
+the datastores to become healthy, applies the SQL migration, and then starts the
+application.
+
+```bash
+cp .env.compose.example .env.compose
+make compose-admin-hash
+# Replace ADMIN_PASSWORD_HASH in .env.compose with the generated value exactly.
+make compose-up
+make compose-seed
+```
+
+Open <http://localhost:5000>. If port 5000 is already occupied, prefix Compose
+commands with an alternative, for example `APP_PORT=5001 make compose-up`. The
+migration container is safe to run repeatedly; it applies only revisions that
+have not yet been recorded in PostgreSQL.
+
+Compose reads application credentials from `.env.compose` in raw mode, so
+Werkzeug password hashes containing dollar signs do not need quoting or escaping.
+The Make targets deliberately prevent Compose from interpreting the separate
+host-development `.env` file. Service addresses are supplied only inside the
+Compose network.
+
+Useful inspection commands:
+
+```bash
+make compose-ps
+make compose-ready
+make compose-logs
+make compose-down
+```
+
+`compose-down` preserves PostgreSQL, MongoDB, and Redis data. The explicitly
+guarded `make compose-destroy CONFIRM=nexus` command also removes those named
+volumes and cannot be undone. Rebuild the application image after source or
+dependency changes with `make compose-build`.
+
+The Compose environment uses pinned PostgreSQL 17, MongoDB 8.2, Redis 8, Python
+3.12, and uv images. Datastore ports are intentionally private to the Compose
+network; use the Compose Make targets or
+`COMPOSE_DISABLE_ENV_FILE=1 docker compose exec` when direct inspection is
+needed.
+
+## Host-based development
 
 PostgreSQL, MongoDB, and Redis must be running locally. Create the PostgreSQL
 database referenced by `DATABASE_URL` before starting the application. The
@@ -78,5 +124,7 @@ make typecheck
 make test
 ```
 
-The Docker environment and production deployment will be added after the
-application model and behavior are stabilized.
+The Dockerfile and Compose setup are development/reviewer infrastructure, not a
+claim of production deployment readiness. A public deployment would additionally
+need TLS, production serving, secret management, backups, and operational
+monitoring.
